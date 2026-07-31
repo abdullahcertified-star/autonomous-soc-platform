@@ -1,0 +1,645 @@
+{% extends "base_soc.html" %}
+{% block title %}Firewall{% endblock %}
+{% block page_title %}Firewall — Advanced Protection{% endblock %}
+
+{% block content %}
+
+<!-- ══ STATS ROW ════════════════════════════════════════════════════════════ -->
+<div class="stats-row" style="margin-bottom:14px;">
+  <div class="stat-card red">
+    <div class="stat-label">Blocked IPs</div>
+    <div class="stat-value" id="fw-count">0</div>
+    <div class="stat-sub">active rules</div>
+  </div>
+  <div class="stat-card orange">
+    <div class="stat-label">Suspicious IPs</div>
+    <div class="stat-value" id="fw-suspicious">0</div>
+    <div class="stat-sub">awaiting action</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-label">ARP Events</div>
+    <div class="stat-value" id="fw-arp">0</div>
+    <div class="stat-sub">spoofing alerts</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Auto-Blocked</div>
+    <div class="stat-value" id="fw-auto">0</div>
+    <div class="stat-sub">by detection engine</div>
+  </div>
+  <div class="stat-card" style="background:rgba(15,15,15,.55);">
+    <div class="stat-label">Active Connections</div>
+    <div class="stat-value" id="fw-conns">0</div>
+    <div class="stat-sub">live flows</div>
+  </div>
+  <div class="stat-card" style="background:rgba(15,15,15,.55);">
+    <div class="stat-label">Packets / sec</div>
+    <div class="stat-value" id="fw-pps">0</div>
+    <div class="stat-sub">current rate</div>
+  </div>
+</div>
+
+<!-- ══ PROTECTION SETTINGS CARD ════════════════════════════════════════════ -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header">
+    <span class="card-title">Network Protection Settings</span>
+    <span id="settings-saved-badge"
+      style="display:none;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);
+      color:#22c55e;padding:2px 10px;border-radius:4px;font-size:10px;letter-spacing:.06em;">
+      SAVED
+    </span>
+  </div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+
+    <!-- Block Private IPs toggle -->
+    <div class="fw-toggle-group">
+      <label class="toggle-switch">
+        <input type="checkbox" id="tog-private" onchange="saveProtectionSetting('block_private_ips', this.checked)" />
+        <span class="toggle-track"></span>
+      </label>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#f0ede8;">Block Private IPs</div>
+        <div style="font-size:11px;color:#8a8880;margin-top:2px;">
+          Allow blocking 192.168.x.x / 10.x.x.x / 172.16.x.x ranges.<br>
+          When OFF, private IPs are monitored but never blocked.
+        </div>
+      </div>
+    </div>
+
+    <!-- Auto-block suspicious toggle -->
+    <div class="fw-toggle-group">
+      <label class="toggle-switch">
+        <input type="checkbox" id="tog-autoblock" onchange="saveProtectionSetting('flood_block_auto', this.checked)" />
+        <span class="toggle-track"></span>
+      </label>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#f0ede8;">Auto-Block on Flood</div>
+        <div style="font-size:11px;color:#8a8880;margin-top:2px;">
+          Automatically block IPs when flooding is detected.<br>
+          Uses the detection engine's ATTACK classification.
+        </div>
+      </div>
+    </div>
+
+    <!-- MITM detection toggle -->
+    <div class="fw-toggle-group">
+      <label class="toggle-switch">
+        <input type="checkbox" id="tog-mitm" onchange="saveProtectionSetting('mitm_detection', this.checked)" />
+        <span class="toggle-track"></span>
+      </label>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#f0ede8;">MITM / ARP Detection</div>
+        <div style="font-size:11px;color:#8a8880;margin-top:2px;">
+          Monitor ARP replies for IP–MAC conflicts and MAC spreading.<br>
+          Alerts admin when suspicious ARP behaviour is detected.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ DISTRIBUTED FLOOD IPs (shown only during active flood) ═════════════ -->
+<div id="dist-flood-section" style="display:none;margin-bottom:14px;">
+  <div class="card">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#fb923c;
+          box-shadow:0 0 8px rgba(251,146,60,.9);flex-shrink:0;
+          animation:soc-pulse 1.2s infinite;display:inline-block;"></span>
+        <span class="card-title" style="color:#fb923c;">Distributed Flood — Active</span>
+        <span class="card-badge" id="dist-flood-count" style="background:rgba(251,146,60,.15);color:#fb923c;border:1px solid rgba(251,146,60,.3);">0 IPs</span>
+        <span id="dist-flood-meta" style="font-size:10px;color:var(--text-muted);"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="blockDistributed()" style="
+          padding:5px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+          background:rgba(251,146,60,.15);border:1px solid rgba(251,146,60,.5);color:#fb923c;
+          transition:all .15s;"
+          onmouseover="this.style.background='rgba(251,146,60,.3)'"
+          onmouseout="this.style.background='rgba(251,146,60,.15)'">
+          Block All Flood IPs
+        </button>
+      </div>
+    </div>
+    <div class="table-wrap" style="max-height:260px;">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>Pkts in Window</th>
+            <th>Type</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="dist-flood-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SUSPICIOUS IPs + ARP EVENTS ═════════════════════════════════════════ -->
+<div class="grid-2" style="gap:14px;margin-bottom:14px;">
+
+  <!-- Suspicious IPs panel -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Suspicious / Attacking IPs</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-badge" id="susp-count">0</span>
+        <button id="btn-block-all-susp" class="btn" style="
+          background:linear-gradient(135deg,rgba(239,68,68,.25),rgba(220,38,38,.2));
+          border:1px solid rgba(239,68,68,.5);color:#f87171;
+          padding:4px 12px;font-size:11px;font-weight:700;letter-spacing:.04em;
+          border-radius:6px;cursor:pointer;transition:all .2s;"
+          onclick="blockAllSuspicious()"
+          onmouseover="this.style.background='rgba(239,68,68,.35)'"
+          onmouseout="this.style.background='linear-gradient(135deg,rgba(239,68,68,.25),rgba(220,38,38,.2))'">
+          Block All Suspicious IPs
+        </button>
+        <button id="btn-block-dist" class="btn" style="display:none;
+          background:rgba(251,146,60,.15);border:1px solid rgba(251,146,60,.5);
+          color:#fb923c;padding:4px 12px;font-size:11px;font-weight:700;
+          letter-spacing:.04em;border-radius:6px;cursor:pointer;transition:all .2s;"
+          onclick="blockDistributed()"
+          onmouseover="this.style.background='rgba(251,146,60,.3)'"
+          onmouseout="this.style.background='rgba(251,146,60,.15)'">
+          Block Distributed IPs (<span id="dist-ip-count">0</span>)
+        </button>
+      </div>
+    </div>
+    <div class="table-wrap" style="max-height:300px;">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>Severity</th>
+            <th>Type</th>
+            <th>Packets</th>
+            <th>Country</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="susp-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ARP / MITM Events panel -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">ARP Spoofing / MITM Alerts</span>
+      <span class="card-badge" id="arp-count">0</span>
+    </div>
+    <div class="table-wrap" style="max-height:300px;">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>Source IP</th>
+            <th>MAC</th>
+            <th>Attack Type</th>
+            <th>Severity</th>
+            <th>Time</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="arp-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ MANUAL BLOCK FORM ════════════════════════════════════════════════════ -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header">
+    <span class="card-title">Block an IP Address</span>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <input id="block-ip"     class="filter-input" placeholder="IP address (e.g. 192.168.1.1)" style="min-width:200px;" />
+    <input id="block-reason" class="filter-input" placeholder="Reason"                         style="min-width:180px;" />
+    <input id="block-dur"    class="filter-input" placeholder="Duration (sec, 0=permanent)"    style="min-width:150px;" type="number" min="0" />
+    <button class="btn btn-block" onclick="blockIP()">Block IP</button>
+  </div>
+</div>
+
+<!-- ══ BLOCKED LIST + HISTORY ═══════════════════════════════════════════════ -->
+<div class="grid-2" style="gap:14px;">
+
+  <!-- Currently blocked -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Currently Blocked</span>
+      <span class="card-badge" id="blocked-count">0</span>
+    </div>
+    <div class="table-wrap" style="max-height:360px;">
+      <table class="soc-table">
+        <thead>
+          <tr><th>IP Address</th><th>Blocked At</th><th>Reason</th><th>Auto</th><th>Expires In</th><th>Action</th></tr>
+        </thead>
+        <tbody id="blocked-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Firewall Event History</span>
+      <span class="card-badge" id="fw-events">0</span>
+    </div>
+    <div class="table-wrap" style="max-height:360px;">
+      <table class="soc-table">
+        <thead>
+          <tr><th>IP Address</th><th>Action</th><th>Time</th><th>Reason</th></tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.fw-toggle-group {
+  display:flex;align-items:flex-start;gap:12px;
+  background:rgba(15,15,15,.5);border:1px solid #1e1e1e;
+  border-radius:8px;padding:12px 14px;min-width:260px;flex:1;
+}
+.btn-unblock {
+  background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);
+  color:#22c55e;padding:3px 10px;border-radius:5px;font-size:10px;cursor:pointer;
+  transition:background .15s;
+}
+.btn-unblock:hover { background:rgba(34,197,94,.22); }
+.btn-block-small {
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);
+  color:#f87171;padding:3px 10px;border-radius:5px;font-size:10px;cursor:pointer;
+  transition:background .15s;
+}
+.btn-block-small:hover { background:rgba(239,68,68,.22); }
+.sev-high   { color:#ef4444;font-weight:700; }
+.sev-medium { color:#f97316;font-weight:600; }
+.sev-low    { color:#eab308; }
+.arp-high   { background:rgba(239,68,68,.07); }
+.arp-med    { background:rgba(249,115,22,.07); }
+</style>
+
+<script>
+const escHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// ── Protection settings ──────────────────────────────────────────────────────
+async function loadProtectionSettings() {
+  try {
+    const r = await fetch('/api/firewall/protection-settings', {cache:'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+    const s = d.settings || {};
+    document.getElementById('tog-private').checked   = Boolean(s.block_private_ips);
+    document.getElementById('tog-autoblock').checked = Boolean(s.flood_block_auto);
+    document.getElementById('tog-mitm').checked      = Boolean(s.mitm_detection);
+  } catch(_) {}
+}
+
+async function saveProtectionSetting(key, value) {
+  try {
+    await fetch('/api/firewall/protection-settings', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify({[key]: value}),
+    });
+    const badge = document.getElementById('settings-saved-badge');
+    badge.style.display = 'inline';
+    setTimeout(() => { badge.style.display = 'none'; }, 2000);
+    showToast(key.replace(/_/g,' ') + ' updated', 'success');
+  } catch(e) { showToast('Save failed: ' + e.message, 'error'); }
+}
+
+// ── Block a single IP ────────────────────────────────────────────────────────
+async function blockIP() {
+  const ip     = (document.getElementById('block-ip').value     || '').trim();
+  const reason = (document.getElementById('block-reason').value || 'Manual block').trim();
+  const dur    = document.getElementById('block-dur').value;
+  if (!ip) { showToast('Enter an IP address', 'error'); return; }
+  const body = {ip, reason};
+  if (dur !== '') body.duration = parseInt(dur, 10);
+  try {
+    const res = await fetch('/api/firewall/block', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { showToast(`Block failed (${res.status})`, 'error'); return; }
+    const d = await res.json();
+    const msg = d.status === 'blocked' ? `${ip} blocked` :
+                d.status === 'refused_private' ? `${ip} is private — enable "Block Private IPs" first` :
+                `${ip}: ${d.status}`;
+    showToast(msg, d.status === 'blocked' ? 'success' : 'error');
+    document.getElementById('block-ip').value = '';
+    document.getElementById('block-reason').value = '';
+    refresh();
+  } catch(e) { showToast('Block failed: ' + e.message, 'error'); }
+}
+
+async function unblockIP(ip) {
+  try {
+    const res = await fetch('/api/firewall/unblock', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify({ip}),
+    });
+    if (!res.ok) { showToast(`Unblock failed (${res.status})`, 'error'); return; }
+    const d = await res.json();
+    showToast(d.status === 'unblocked' ? `${ip} unblocked` : `${ip}: ${d.status}`, 'success');
+    refresh();
+  } catch(e) { showToast('Unblock failed: ' + e.message, 'error'); }
+}
+
+// ── Block all suspicious ─────────────────────────────────────────────────────
+async function blockAllSuspicious() {
+  const count = parseInt(document.getElementById('susp-count').textContent, 10) || 0;
+  if (count === 0) { showToast('No suspicious IPs to block', 'error'); return; }
+  if (!confirm(`Block all ${count} suspicious IPs?`)) return;
+  try {
+    const res = await fetch('/api/firewall/block-suspicious', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify({}),
+    });
+    const d = await res.json();
+    const n = (d.blocked || []).length;
+    showToast(`Blocked ${n} IP${n !== 1 ? 's' : ''}`, 'success');
+    refresh();
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+// ── Block from ARP alert ─────────────────────────────────────────────────────
+async function blockFromArp(ip) {
+  try {
+    const res = await fetch('/api/firewall/block', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify({ip, reason:'ARP Spoofing detected'}),
+    });
+    const d = await res.json();
+    const ok = d.status === 'blocked';
+    showToast(ok ? `${ip} blocked (ARP threat)` : `${ip}: ${d.status}`, ok ? 'success' : 'error');
+    refresh();
+  } catch(e) { showToast('Block failed: ' + e.message, 'error'); }
+}
+
+// ── Severity helpers ─────────────────────────────────────────────────────────
+function sevPill(s) {
+  if (s === 'HIGH' || s === 'ATTACK')
+    return '<span class="pill pill-attack" style="font-size:9px;">ATTACK</span>';
+  if (s === 'SUSPICIOUS' || s === 'MEDIUM')
+    return '<span class="pill pill-suspicious" style="font-size:9px;">SUSPICIOUS</span>';
+  return '<span class="pill" style="font-size:9px;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);">NORMAL</span>';
+}
+
+function arpSevPill(s) {
+  if (s === 'HIGH')
+    return '<span class="pill pill-attack" style="font-size:9px;">HIGH</span>';
+  return '<span class="pill pill-suspicious" style="font-size:9px;">MEDIUM</span>';
+}
+
+// ── Block distributed flood IPs ───────────────────────────────────────────────
+async function blockDistributed() {
+  const n = parseInt(document.getElementById('dist-ip-count').textContent, 10) || 0;
+  if (n === 0) { showToast('No flood IPs detected', 'error'); return; }
+  if (!confirm(`Block ${n} flood IPs?\n\nOnly PUBLIC IPs that sent 3+ packets are included.\nYour LAN devices, gateway, and private IPs are automatically excluded.`)) return;
+  const btn = document.getElementById('btn-block-dist');
+  btn.disabled = true; btn.style.opacity = '.5';
+  try {
+    const r = await fetch('/api/firewall/block-distributed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    });
+    const d = await r.json();
+    showToast(`Blocked ${d.blocked} IPs (${d.skipped} skipped — private/whitelist)`, 'success');
+    refresh();
+  } catch(e) {
+    showToast('Failed to block distributed IPs', 'error');
+  } finally {
+    btn.disabled = false; btn.style.opacity = '1';
+  }
+}
+
+// ── Poll distributed flood IP count ─────────────────────────────────────────
+async function pollDistributedIPs() {
+  try {
+    const r = await fetch('/api/firewall/distributed-ips', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // ── Header button (existing) ───────────────────────────────────────────
+    const btn = document.getElementById('btn-block-dist');
+    const cnt = document.getElementById('dist-ip-count');
+    if (d.count > 0) {
+      cnt.textContent = d.count;
+      btn.title = `${d.count} flood IPs (public, 3+ pkts) of ${d.total_seen} total seen`;
+      btn.style.display = 'inline-flex';
+    } else {
+      btn.style.display = 'none';
+    }
+
+    // ── Distributed flood section ──────────────────────────────────────────
+    const section = document.getElementById('dist-flood-section');
+    if (d.count === 0) { section.style.display = 'none'; return; }
+
+    section.style.display = 'block';
+    document.getElementById('dist-flood-count').textContent = d.count + ' flood IPs';
+    document.getElementById('dist-flood-meta').textContent =
+      `(${d.total_seen} unique IPs seen in window — showing public IPs with 3+ packets)`;
+
+    const tbody = document.getElementById('dist-flood-tbody');
+    const counts = d.ip_counts || {};
+    const ips    = d.ips || [];
+
+    // Sort by packet count descending
+    const sorted = ips.slice().sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+
+    tbody.innerHTML = sorted.map(ip => {
+      const pkts = counts[ip] || 0;
+      return `<tr>
+        <td style="font-family:var(--font-mono);font-weight:600;color:#fb923c;">${escHtml(ip)}</td>
+        <td style="font-family:var(--font-mono);">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:60px;height:5px;background:var(--bg3);border-radius:99px;overflow:hidden;">
+              <div style="height:100%;background:#fb923c;border-radius:99px;
+                width:${Math.min(100, pkts * 10)}%;"></div>
+            </div>
+            <span style="font-size:11px;color:#fb923c;">${pkts}</span>
+          </div>
+        </td>
+        <td><span style="font-size:10px;color:var(--text-muted);">Flood Source</span></td>
+        <td>
+          <button onclick="blockDistIP('${escHtml(ip)}')" style="
+            padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;
+            background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+            transition:all .15s;"
+            onmouseover="this.style.background='rgba(239,68,68,.25)'"
+            onmouseout="this.style.background='rgba(239,68,68,.12)'">Block</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {}
+}
+
+async function blockDistIP(ip) {
+  const r = await fetch('/api/firewall/block', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    body: JSON.stringify({ ip, reason: 'Distributed flood source' }),
+  });
+  const d = await r.json();
+  if (d.status === 'blocked') {
+    showToast(`Blocked ${ip}`, 'success');
+    pollDistributedIPs();
+    refresh();
+  } else {
+    showToast(d.error || d.status, 'error');
+  }
+}
+setInterval(pollDistributedIPs, 5000);
+pollDistributedIPs();
+
+// ── Main refresh ─────────────────────────────────────────────────────────────
+async function refresh() {
+  try {
+    // Stats
+    const sr = await fetch('/api/firewall/stats', {cache:'no-store'});
+    if (sr.ok) {
+      const s = await sr.json();
+      document.getElementById('fw-count').textContent      = s.blocked_count     || 0;
+      document.getElementById('fw-suspicious').textContent = s.suspicious_count  || 0;
+      document.getElementById('fw-arp').textContent        = s.arp_event_count   || 0;
+      document.getElementById('fw-auto').textContent       = s.auto_blocked      || 0;
+      document.getElementById('fw-conns').textContent      = s.active_connections || 0;
+      document.getElementById('fw-pps').textContent        = s.pps               || 0;
+      // Sync toggles silently on first load if already set
+      if (s.settings) {
+        document.getElementById('tog-private').checked   = Boolean(s.settings.block_private_ips);
+        document.getElementById('tog-autoblock').checked = Boolean(s.settings.flood_block_auto);
+        document.getElementById('tog-mitm').checked      = Boolean(s.settings.mitm_detection);
+      }
+    }
+
+    // Full firewall data (blocked + history)
+    const fr = await fetch('/api/firewall', {cache:'no-store'});
+    if (fr.ok) {
+      const data = await fr.json();
+      const blocked = data.blocked || [];
+      const history = data.history || [];
+
+      document.getElementById('blocked-count').textContent = blocked.length;
+      document.getElementById('fw-events').textContent     = history.length;
+
+      /* Blocked table */
+      const bBody = document.getElementById('blocked-body');
+      if (!blocked.length) {
+        bBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No IPs currently blocked.</div></td></tr>';
+      } else {
+        bBody.innerHTML = blocked.map(b => {
+          const expiry = b.expires_in != null
+            ? (b.expires_in === 0 ? '<span style="color:#ef4444">expired</span>' : `${b.expires_in}s`)
+            : '<span style="color:#8a8880">permanent</span>';
+          return `<tr class="blocked-row">
+            <td class="mono" style="color:#ff6b6b">${b.ip}</td>
+            <td class="mono" style="font-size:10px">${b.blocked_at}</td>
+            <td style="color:#8a8880;font-size:11px">${b.reason || '--'}</td>
+            <td>${b.auto ? '<span class="pill pill-attack" style="font-size:9px">AUTO</span>' : '<span style="color:#3a3836;font-size:10px">Manual</span>'}</td>
+            <td class="mono" style="font-size:10px">${expiry}</td>
+            <td><button class="btn-unblock" onclick="unblockIP('${b.ip}')">Unblock</button></td>
+          </tr>`;
+        }).join('');
+      }
+
+      /* History table */
+      const hBody = document.getElementById('history-body');
+      if (!history.length) {
+        hBody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No events yet.</div></td></tr>';
+      } else {
+        hBody.innerHTML = history.map(h => {
+          const cls = h.action === 'BLOCKED' ? 'pill-attack' : 'pill-resolved';
+          return `<tr>
+            <td class="mono">${h.ip}</td>
+            <td><span class="pill ${cls}" style="font-size:9px">${h.action}</span></td>
+            <td class="mono" style="font-size:10px">${h.blocked_at}</td>
+            <td style="color:#8a8880;font-size:11px">${h.reason || '--'}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    // Suspicious IPs
+    const suspRes = await fetch('/api/firewall/suspicious', {cache:'no-store'});
+    if (suspRes.ok) {
+      const sd = await suspRes.json();
+      const ips = sd.suspicious || [];
+      document.getElementById('susp-count').textContent = ips.length;
+      const sBody = document.getElementById('susp-body');
+      if (!ips.length) {
+        sBody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="color:#22c55e">No suspicious activity detected.</div></td></tr>';
+      } else {
+        sBody.innerHTML = ips.map(s => `<tr class="${s.severity === 'HIGH' || s.severity === 'ATTACK' ? 'arp-high' : 'arp-med'}">
+          <td class="mono" style="color:#fbbf24">${s.ip}</td>
+          <td>${sevPill(s.severity)}</td>
+          <td style="font-size:11px;color:#8a8880">${s.attack_type || s.source || '--'}</td>
+          <td class="mono">${s.packets || 0}</td>
+          <td style="font-size:11px">${s.country || '--'}</td>
+          <td><button class="btn-block-small" onclick="blockSuspiciousIP('${s.ip}', '${(s.attack_type||s.source||'Suspicious').replace(/'/g,'')}')">Block</button></td>
+        </tr>`).join('');
+      }
+    }
+
+    // ARP events
+    const arpRes = await fetch('/api/firewall/arp-events', {cache:'no-store'});
+    if (arpRes.ok) {
+      const ad = await arpRes.json();
+      const events = ad.arp_events || [];
+      document.getElementById('arp-count').textContent = events.length;
+      const aBody = document.getElementById('arp-body');
+      if (!events.length) {
+        aBody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="color:#22c55e">No ARP anomalies detected.</div></td></tr>';
+      } else {
+        // Show most recent first
+        aBody.innerHTML = [...events].reverse().slice(0, 50).map(e => `
+          <tr class="${e.severity === 'HIGH' ? 'arp-high' : 'arp-med'}">
+            <td class="mono" style="color:#fbbf24">${e.src_ip || '--'}</td>
+            <td class="mono" style="font-size:10px;color:#8a8880">${e.src_mac || '--'}</td>
+            <td style="font-size:11px;color:#f97316">${e.attack_type || '--'}</td>
+            <td>${arpSevPill(e.severity)}</td>
+            <td class="mono" style="font-size:10px">${e.time || '--'}</td>
+            <td>${e.src_ip ? `<button class="btn-block-small" onclick="blockFromArp('${e.src_ip}')">Block</button>` : '--'}</td>
+          </tr>`).join('');
+      }
+    }
+
+  } catch(e) { console.warn('Refresh error:', e); }
+}
+
+async function blockSuspiciousIP(ip, reason) {
+  try {
+    const res = await fetch('/api/firewall/block', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body: JSON.stringify({ip, reason}),
+    });
+    const d = await res.json();
+    const ok = d.status === 'blocked';
+    const msg = ok ? `${ip} blocked` :
+                d.status === 'refused_private' ? `${ip} is private — enable "Block Private IPs" in settings` :
+                `${ip}: ${d.status}`;
+    showToast(msg, ok ? 'success' : 'error');
+    refresh();
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+// Boot
+refresh();
+setInterval(refresh, 3000);
+</script>
+{% endblock %}

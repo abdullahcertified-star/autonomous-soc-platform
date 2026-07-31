@@ -1,0 +1,250 @@
+{% extends "base_soc.html" %}
+{% block title %}Network Overview{% endblock %}
+{% block page_title %}Network Overview{% endblock %}
+
+{% block content %}
+
+<div class="stats-row" style="margin-bottom:16px;">
+  <div class="stat-card blue">
+    <div class="stat-label">Total Packets</div>
+    <div class="stat-value" id="net-total">0</div>
+    <div class="stat-sub">captured lifetime</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Active Connections</div>
+    <div class="stat-value" id="net-conns">0</div>
+    <div class="stat-sub">unique flows seen</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Suspicious IPs</div>
+    <div class="stat-value" id="net-susp">0</div>
+    <div class="stat-sub">flagged sources</div>
+  </div>
+  <div class="stat-card orange">
+    <div class="stat-label">Current Rate</div>
+    <div class="stat-value" id="net-rate">0</div>
+    <div class="stat-sub">pkts / sec</div>
+  </div>
+</div>
+
+<div class="grid-2" style="margin-bottom:14px;">
+
+  <!-- Protocol Breakdown -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Protocol Breakdown</span>
+    </div>
+    <div id="proto-rows" style="display:flex;flex-direction:column;gap:10px;margin-top:4px;"></div>
+  </div>
+
+  <!-- Capture Status -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Capture Engine Status</span>
+    </div>
+    <div id="capture-detail" style="display:flex;flex-direction:column;gap:10px;margin-top:4px;"></div>
+  </div>
+
+</div>
+
+<!-- Traffic Heat -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header">
+    <span class="card-title">Live Traffic Heat Indicator</span>
+    <span id="heat-label" style="font-size:11px;font-family:var(--font-mono);color:#8a8880;">0 pkts/s</span>
+  </div>
+  <div class="heat-bar-wrap" style="height:12px;">
+    <div class="heat-bar-fill" id="heat-fill" style="width:0%;background:#22c55e;"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:#3a3836;margin-top:4px;">
+    <span>0</span><span>LOW</span><span>MEDIUM</span><span>HIGH</span><span>CRITICAL</span>
+  </div>
+</div>
+
+<!-- Traffic History Chart -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header">
+    <span class="card-title">Traffic History (last 60 ticks)</span>
+  </div>
+  <canvas id="net-chart" height="100"></canvas>
+</div>
+
+<!-- Network Devices Table -->
+<div class="card">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span class="card-title">Network Devices</span>
+    <span id="dev-count" style="font-size:11px;font-family:var(--font-mono);color:#8a8880;">scanning…</span>
+  </div>
+  <div style="font-size:11px;color:#3a3836;margin-bottom:10px;padding:0 2px;">
+    Devices discovered via ARP broadcasts. Packet capture only shows traffic TO/FROM this host — switched networks physically prevent seeing other devices' unicast traffic without port mirroring.
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:1px solid rgba(28,28,28,.8);">
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">IP Address</th>
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">MAC Address</th>
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">Hostname</th>
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">Vendor</th>
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">Source</th>
+          <th style="text-align:left;padding:6px 8px;color:#8a8880;font-weight:500;">Last Seen</th>
+        </tr>
+      </thead>
+      <tbody id="devices-tbody">
+        <tr><td colspan="6" style="padding:16px 8px;color:#3a3836;text-align:center;">Scanning LAN for devices…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let netChart = null;
+
+function initChart() {
+  if (typeof Chart === 'undefined') return;
+  netChart = new Chart(document.getElementById('net-chart'), {
+    type: 'line',
+    data: {
+      labels: Array(60).fill(''),
+      datasets: [{
+        data: Array(60).fill(0),
+        borderColor: '#c8c4be',
+        backgroundColor: 'rgba(200,196,190,.12)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5
+      }]
+    },
+    options: {
+      animation: false, responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' } },
+        y: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function renderProtoRows(stats) {
+  const total = (stats.TCP || 0) + (stats.UDP || 0) + (stats.OTHER || 0) || 1;
+  const items = [
+    { label: 'TCP',   val: stats.TCP   || 0, color: '#c8c4be' },
+    { label: 'UDP',   val: stats.UDP   || 0, color: '#14b8a6' },
+    { label: 'Other', val: stats.OTHER || 0, color: '#f59e0b' },
+  ];
+  document.getElementById('proto-rows').innerHTML = items.map(i => {
+    const pct = Math.round(i.val / total * 100);
+    return `<div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span style="color:#f0ede8">${i.label}</span>
+        <span class="mono" style="color:#8a8880">${i.val} pkts · ${pct}%</span>
+      </div>
+      <div style="height:5px;background:#0f0f0f;border-radius:999px;overflow:hidden;">
+        <div style="width:${pct}%;height:100%;background:${i.color};border-radius:999px;"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCapture(cap) {
+  const rows = [
+    { k: 'Mode',       v: (cap.mode || '?').toUpperCase() },
+    { k: 'Interface',  v: cap.interface || 'auto' },
+    { k: 'Real Pkts',  v: cap.real_packets || 0 },
+    { k: 'Last Error', v: cap.last_error || 'None' },
+  ];
+  document.getElementById('capture-detail').innerHTML = rows.map(r => `
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(28,28,28,.5);padding-bottom:8px;font-size:12px;">
+      <span style="color:#8a8880">${r.k}</span>
+      <span class="mono" style="color:#f0ede8">${r.v}</span>
+    </div>`).join('');
+}
+
+function updateHeat(rate) {
+  // rate is current_pps() — packets per 1-second rolling window.
+  // 200 pps = critical; thresholds: 30 yellow, 80 orange, 140 red.
+  const max = 200;
+  const pct = Math.min(100, Math.round(rate / max * 100));
+  const color = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f97316' : pct >= 15 ? '#eab308' : '#22c55e';
+  document.getElementById('heat-fill').style.width      = pct + '%';
+  document.getElementById('heat-fill').style.background = color;
+  document.getElementById('heat-label').textContent     = `${rate} pkts/s`;
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/network', { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+
+    document.getElementById('net-total').textContent = d.total_packets || 0;
+    document.getElementById('net-conns').textContent = d.active_connections || 0;
+    document.getElementById('net-susp').textContent  = d.suspicious_ips || 0;
+    document.getElementById('net-rate').textContent  = d.traffic_rate || 0;
+
+    renderProtoRows(d.top_protocols || {});
+    renderCapture(d.capture || {});
+    updateHeat(d.traffic_rate || 0);
+
+    if (netChart) {
+      const hist = (d.traffic_history || []).slice(-60);
+      while (hist.length < 60) hist.unshift(0);
+      netChart.data.datasets[0].data = hist;
+      netChart.update('none');
+    }
+  } catch(e) { /* silent */ }
+}
+
+// ── Device source badge colours ───────────────────────────────────────────
+const SOURCE_COLOR = {
+  'self':        '#c8c4be',
+  'arp-passive': '#22c55e',
+  'arp-cache':   '#14b8a6',
+  'arp-scan':    '#f59e0b',
+};
+
+function renderDevices(devices) {
+  const tbody = document.getElementById('devices-tbody');
+  if (!devices || devices.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px 8px;color:#3a3836;text-align:center;">No devices found yet — ARP scan runs every 60 s</td></tr>';
+    return;
+  }
+  tbody.innerHTML = devices.map(d => {
+    const src    = d.source || 'unknown';
+    const color  = SOURCE_COLOR[src] || '#8a8880';
+    const isSelf = src === 'self';
+    const rowBg  = isSelf ? 'background:rgba(200,196,190,.06);' : '';
+    const hn     = d.hostname !== d.ip ? d.hostname : '—';
+    return `<tr style="border-bottom:1px solid rgba(28,28,28,.4);${rowBg}">
+      <td style="padding:7px 8px;color:#f0ede8;font-family:var(--font-mono);">${d.ip}${isSelf ? ' <span style="color:#c8c4be;font-size:10px;">(this host)</span>' : ''}</td>
+      <td style="padding:7px 8px;color:#8a8880;font-family:var(--font-mono);">${d.mac}</td>
+      <td style="padding:7px 8px;color:#8a8880;">${hn}</td>
+      <td style="padding:7px 8px;color:#8a8880;">${d.vendor || '—'}</td>
+      <td style="padding:7px 8px;">
+        <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;">${src}</span>
+      </td>
+      <td style="padding:7px 8px;color:#3a3836;font-size:11px;">${d.last_seen || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function refreshDevices() {
+  try {
+    const res = await fetch('/api/network/devices', { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+    document.getElementById('dev-count').textContent = `${d.count} device${d.count !== 1 ? 's' : ''} found`;
+    renderDevices(d.devices);
+  } catch(e) { /* silent */ }
+}
+
+initChart();
+refresh();
+refreshDevices();
+setInterval(refresh, 2500);
+setInterval(refreshDevices, 15000);   // devices update every 15 s (ARP scan is 60 s)
+</script>
+{% endblock %}

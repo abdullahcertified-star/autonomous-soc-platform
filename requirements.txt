@@ -1,0 +1,94 @@
+# ============================================================
+#  SOC / SIEM Platform — Python Dependencies
+#
+#  Install:  pip install -r requirements.txt
+#
+#  SYSTEM PREREQUISITES (must be installed separately before pip install):
+#
+#  Windows:
+#    1. Python 3.10+         https://www.python.org/downloads/
+#    2. Npcap                https://npcap.com/#download
+#                            (tick "WinPcap API-compatible mode" during install)
+#    3. ODBC Driver 18       https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
+#    4. SQL Server Express   https://www.microsoft.com/en-us/sql-server/sql-server-downloads
+#       (create database: CREATE DATABASE SOC_Platform)
+#
+#  Linux:
+#    sudo apt install libpcap-dev unixodbc-dev
+#    sudo setcap cap_net_raw+eip $(which python3)   # non-root packet capture
+#    Install msodbcsql18: https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server
+#
+# ============================================================
+
+# ── Flask Core ────────────────────────────────────────────────────────────────
+Flask==3.0.3
+Werkzeug==3.1.8           # WSGI toolkit used by Flask routing & dev server
+Jinja2==3.1.6             # Template engine (Flask dependency)
+itsdangerous==2.2.0       # Secure cookie/token signing (Flask sessions)
+click==8.3.3              # CLI framework (Flask CLI)
+blinker==1.9.0            # Signal library (Flask signals)
+
+# ── Flask Extensions ──────────────────────────────────────────────────────────
+Flask-SQLAlchemy==3.1.1   # SQLAlchemy ORM integration
+Flask-Login==0.6.3        # User session & authentication management
+Flask-WTF==1.2.1          # CSRF protection & WTForms integration
+WTForms==3.2.1            # Form validation (Flask-WTF dependency)
+MarkupSafe==3.0.3         # HTML/XML safe string escaping (Jinja2 dep)
+
+# ── Real-Time WebSocket Support ───────────────────────────────────────────────
+Flask-SocketIO==5.6.1     # WebSocket integration (emits live SOC events)
+python-socketio==5.16.2   # Socket.IO server implementation
+python-engineio==4.13.2   # Engine.IO transport layer (polling + websocket)
+simple-websocket==1.1.0   # WebSocket backend for threading async_mode
+wsproto==1.3.2            # WebSocket protocol implementation
+h11==0.16.0               # HTTP/1.1 state machine (simple-websocket dep)
+bidict==0.23.1            # Bidirectional dict (python-socketio dep)
+
+# ── API Rate Limiting ─────────────────────────────────────────────────────────
+Flask-Limiter==4.1.1      # Per-IP rate limiting (300 req/min default)
+limits==5.8.0             # Rate limit backend (Flask-Limiter dep)
+ordered-set==4.1.0        # Ordered set implementation (Flask-Limiter dep)
+
+# ── Database ORM ──────────────────────────────────────────────────────────────
+SQLAlchemy==2.0.49        # SQL ORM (Flask-SQLAlchemy dep)
+greenlet==3.5.0           # Coroutine library (SQLAlchemy async dep)
+
+# ── Database Driver — SQL Server (required) ───────────────────────────────────
+pyodbc==5.3.0             # ODBC bridge used by SQLAlchemy's mssql+pyodbc dialect
+#
+# Requires ODBC Driver 18 for SQL Server to be installed at the OS level.
+# See SYSTEM PREREQUISITES at the top of this file.
+
+# ── Security / Cryptography ───────────────────────────────────────────────────
+bcrypt==4.1.3             # bcrypt password hashing (rounds=12 in models.py)
+
+# ── Network Packet Capture ────────────────────────────────────────────────────
+scapy==2.5.0              # Packet capture, ARP, port scan, flow analysis
+#
+# Requires Npcap (Windows) or libpcap (Linux) at the OS level.
+# See SYSTEM PREREQUISITES at the top of this file.
+
+# ── PDF Report Generation ─────────────────────────────────────────────────────
+reportlab==4.5.1          # PDF generator (GET /api/reports/pdf)
+pillow==12.2.0            # Image processing (reportlab dependency)
+charset-normalizer==3.4.7 # Character encoding detection (reportlab dep)
+
+# ── Environment & Configuration ───────────────────────────────────────────────
+python-dotenv==1.2.2      # Loads .env file — SECRET_KEY, SEED_ADMIN_PASSWORD, etc.
+
+# ── Production WSGI Server (choose one per OS) ───────────────────────────────
+#
+# Linux (recommended — supports WebSocket via eventlet):
+#   pip install gunicorn eventlet
+#
+# Windows (HTTP polling fallback — WebSocket not supported by waitress):
+#   pip install waitress
+#
+# These are NOT pinned here so the install is not forced on both platforms.
+
+# ── Utility (transitive deps — pinned for reproducible installs) ──────────────
+packaging==26.2
+typing_extensions==4.15.0
+colorama==0.4.6            # Windows ANSI color support (click dep)
+wrapt==2.2.1               # Decorator utilities
+Deprecated==1.3.1          # @deprecated decorator (scapy dep)

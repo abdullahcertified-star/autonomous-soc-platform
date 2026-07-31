@@ -1,0 +1,37 @@
+# Pyrefly type checker configuration
+# https://pyrefly.org/en/docs/configuration/
+
+# Point Pyrefly at the virtual environment so it can resolve all installed
+# packages (flask, sqlalchemy, scapy, bcrypt, etc.)
+python_interpreter = ".venv/Scripts/python.exe"
+
+# ── Global error suppression ──────────────────────────────────────────────────
+#
+# The suppressions below cover known false positives from dynamic Python
+# patterns that Pyrefly cannot statically reason about:
+#
+#   unexpected-keyword   — SQLAlchemy generates __init__ at runtime via
+#                          its DeclarativeMeta metaclass. Pyrefly falls back to
+#                          object.__init__ and rejects every column keyword arg.
+#
+#   bad-argument-type    — Flask-Login's current_user is a LocalProxy[User].
+#                          Pyrefly sees LocalProxy[Any|None], not the real User
+#                          type, so it rejects it wherever User is expected.
+#
+#   bad-assignment       — Dicts initialised with None values (e.g. {"thread": None})
+#                          have their value type narrowed to None by Pyrefly;
+#                          later assignments of the actual object (Thread, etc.)
+#                          are then rejected as incompatible.
+#
+#   no-matching-overload — Werkzeug / Flask stub overloads occasionally fail to
+#                          match valid runtime signatures.
+#
+#   implicit-import      — Submodule re-exports (e.g. urllib → urllib.parse)
+#                          that are safe but not statically verifiable.
+#
+[errors]
+unexpected-keyword = false
+bad-argument-type = false
+bad-assignment = false
+no-matching-overload = false
+implicit-import = false

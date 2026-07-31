@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% if triggered %}Access Denied{% else %}Admin Panel — Secure Login{% endif %}</title>
+  <link rel="stylesheet" href="/static/hacker.css" />
+</head>
+<body class="hacker-body">
+<div class="hk-scan-line"></div>
+
+<div class="hk-card" style="{% if triggered %}border-color:rgba(255,48,64,.4);box-shadow:0 0 40px rgba(255,48,64,.1),0 0 80px rgba(255,48,64,.05),inset 0 1px 0 rgba(255,48,64,.08);{% endif %}">
+
+  {% if triggered %}
+  <!-- ── TRAP SCREEN ── -->
+  <div class="hk-trap">
+
+    <div class="hk-trap-icon">⚠</div>
+
+    <div class="hk-trap-badge">Security Alert</div>
+
+    <h1 class="hk-trap-title">Intrusion Detected</h1>
+    <p class="hk-trap-sub">You have been trapped</p>
+
+    <div class="hk-trap-table">
+      <div class="hk-trap-row">
+        <span class="hk-trap-key">IP Address</span>
+        <span class="hk-trap-val">{{ ip }}</span>
+      </div>
+      <div class="hk-trap-row">
+        <span class="hk-trap-key">Timestamp</span>
+        <span class="hk-trap-val">{{ time }}</span>
+      </div>
+      <div class="hk-trap-row">
+        <span class="hk-trap-key">Target</span>
+        <span class="hk-trap-val">Honeypot — Fake Admin Panel</span>
+      </div>
+      <div class="hk-trap-row">
+        <span class="hk-trap-key">Status</span>
+        <span class="hk-trap-val">LOGGED &amp; REPORTED</span>
+      </div>
+    </div>
+
+    <p class="hk-trap-warn">
+      This unauthorized access attempt has been recorded and reported to the
+      security operations team. Your credentials, IP address, browser
+      fingerprint, and session data have been captured.
+    </p>
+
+  </div>
+
+  {% else %}
+  <!-- ── FAKE ADMIN LOGIN (lure screen) ── -->
+  <div class="hk-header">
+    <div class="hk-logo">⬡</div>
+    <h1 class="hk-cursor">ADMIN PANEL</h1>
+    <p>Authorized personnel only. All access attempts are monitored and logged.</p>
+  </div>
+
+  <form method="POST" action="/admin-login" autocomplete="off">
+
+    <div class="hk-form-group">
+      <label class="hk-label" for="username">Username</label>
+      <input class="hk-input" type="text" id="username" name="username"
+             placeholder="admin" autocomplete="off" required />
+    </div>
+
+    <div class="hk-form-group">
+      <label class="hk-label" for="password">Password</label>
+      <div class="hk-input-wrap">
+        <input class="hk-input" type="password" id="password" name="password"
+               placeholder="••••••••" autocomplete="off" required />
+        <button type="button" class="hk-pwd-toggle" onclick="togglePwd()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+               stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <button type="submit" class="hk-btn">AUTHENTICATE</button>
+
+  </form>
+
+  <div class="hk-footer" style="margin-top:1rem;">
+    <span style="color:rgba(0,255,65,.3);font-size:0.72rem;">
+      SESSION ID: <span id="sess-id"></span> &nbsp;|&nbsp; IP LOGGED
+    </span>
+  </div>
+
+  <script>
+  document.getElementById('sess-id').textContent =
+    Math.random().toString(36).substring(2,10).toUpperCase() + '-' +
+    Math.random().toString(36).substring(2,6).toUpperCase();
+
+  function togglePwd() {
+    const i = document.getElementById('password');
+    i.type = i.type === 'password' ? 'text' : 'password';
+  }
+  </script>
+  {% endif %}
+
+</div>
+</body>
+</html>

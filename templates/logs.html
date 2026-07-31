@@ -1,0 +1,657 @@
+{% extends "base_soc.html" %}
+{% block title %}Logs{% endblock %}
+{% block page_title %}Security Event Logs{% endblock %}
+
+{% block content %}
+<style>
+.log-row { cursor:pointer; }
+.log-row td { transition:background .1s; }
+.log-row:hover td { background:rgba(200,196,190,.04) !important; }
+.log-row.row-selected td { background:rgba(200,196,190,.12) !important; }
+.log-row.row-selected td:first-child { box-shadow:inset 3px 0 0 #c8c4be; }
+
+#detail-panel {
+  position:fixed; top:0; right:-420px; width:380px; height:100vh;
+  background:#0f0f0f; border-left:1px solid #1e1e1e; z-index:500;
+  overflow-y:auto; transition:right .25s cubic-bezier(.4,0,.2,1);
+  padding:0; box-shadow:-8px 0 32px rgba(0,0,0,.6);
+}
+#detail-panel.open { right:0; }
+.dp-header { display:flex;justify-content:space-between;align-items:center;
+             padding:16px 18px;border-bottom:1px solid #1e1e1e;position:sticky;top:0;
+             background:#0f0f0f;z-index:1; }
+.dp-body { padding:18px; }
+.dp-field { margin-bottom:14px; }
+.dp-label { font-size:10px;font-weight:700;color:#3a3836;text-transform:uppercase;
+            letter-spacing:.06em;margin-bottom:5px; }
+.dp-value { font-size:13px;color:#f0ede8;word-break:break-all;line-height:1.5; }
+
+.confirm-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;
+                   display:flex;align-items:center;justify-content:center; }
+.confirm-box { background:#0f0f0f;border:1px solid #1e1e1e;border-radius:14px;
+               padding:28px 30px;width:420px;max-width:95vw;text-align:center; }
+.confirm-box h3 { font-size:15px;font-weight:700;margin-bottom:10px;color:#f87171; }
+.confirm-box p  { font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6; }
+.confirm-actions { display:flex;gap:10px;justify-content:center; }
+</style>
+
+<div class="stats-row" style="margin-bottom:16px;">
+  <div class="stat-card blue">
+    <div class="stat-label">Total Events</div>
+    <div class="stat-value" id="log-total">0</div>
+    <div class="stat-sub">in log file</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">High Severity</div>
+    <div class="stat-value" id="log-high">0</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-label">Medium</div>
+    <div class="stat-value" id="log-med">0</div>
+  </div>
+  <div class="stat-card" style="border-top-color:#c084fc">
+    <div class="stat-label">Honeypot Hits</div>
+    <div class="stat-value" id="log-honeypot">0</div>
+    <div class="stat-sub">trap triggers</div>
+  </div>
+  <div class="stat-card orange">
+    <div class="stat-label">Firewall Events</div>
+    <div class="stat-value" id="log-fw">0</div>
+    <div class="stat-sub">block / unblock</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="filters-bar" style="margin-bottom:10px;">
+  <select id="f-sev" class="filter-input">
+    <option value="ALL">All Severities</option>
+    <option value="HIGH">High</option>
+    <option value="MEDIUM">Medium</option>
+    <option value="LOW">Low</option>
+  </select>
+  <select id="f-type" class="filter-input">
+    <option value="ALL">All Event Types</option>
+    <option value="ALERT">Alerts</option>
+    <option value="FIREWALL">Firewall</option>
+    <option value="HONEYPOT">Honeypot</option>
+  </select>
+  <input id="f-ip" class="filter-input" placeholder="Filter by IP..." />
+  <button class="btn btn-ghost" onclick="filterRefresh()">&#8635; Refresh</button>
+  <a href="/logs/trash"
+     style="display:inline-flex;align-items:center;gap:6px;
+            background:rgba(200,196,190,.08);border:1px solid rgba(200,196,190,.25);
+            color:#8a8880;font-size:12px;padding:6px 13px;border-radius:8px;
+            text-decoration:none;font-weight:600;transition:all .15s;"
+     onmouseover="this.style.background='rgba(200,196,190,.18)';this.style.color='#f0ede8'"
+     onmouseout="this.style.background='rgba(200,196,190,.08)';this.style.color='#8a8880'">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Recycle Bin
+    <span id="trash-badge" style="display:none;background:rgba(239,68,68,.2);color:#f87171;
+      border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;"></span>
+  </a>
+</div>
+
+<!-- Action toolbar -->
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+            background:#0f0f0f;border:1px solid #1e1e1e;border-radius:10px;padding:10px 14px;">
+
+  <!-- Selection state -->
+  <span id="sel-hint" style="font-size:12px;color:#8a8880;white-space:nowrap;">
+    Click a row to select
+  </span>
+  <span id="sel-badge" style="display:none;background:rgba(200,196,190,.15);border:1px solid rgba(200,196,190,.3);
+        color:#c8c4be;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">
+    0 selected
+  </span>
+
+  <div style="width:1px;height:20px;background:#1e1e1e;flex-shrink:0;"></div>
+
+  <!-- Delete Selected -->
+  <button id="btn-del-sel" onclick="deleteSelectedLogs()" disabled
+          style="display:inline-flex;align-items:center;gap:6px;
+                 background:rgba(239,68,68,.06);border:1px solid #1e1e1e;color:#8a8880;
+                 border-radius:8px;padding:6px 14px;cursor:not-allowed;font-size:12px;font-weight:600;transition:all .15s;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Delete Selected
+  </button>
+
+  <!-- Delete All -->
+  <button id="btn-del-all" onclick="confirmDeleteAll()"
+          style="display:inline-flex;align-items:center;gap:6px;
+                 background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);color:#f87171;
+                 border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
+          onmouseover="this.style.background='rgba(239,68,68,.22)'"
+          onmouseout="this.style.background='rgba(239,68,68,.1)'">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Delete All
+  </button>
+
+  <div style="width:1px;height:20px;background:#1e1e1e;flex-shrink:0;"></div>
+
+  <!-- PDF label -->
+  <div style="display:flex;align-items:center;gap:5px;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+    </svg>
+    <span style="font-size:11px;font-weight:700;color:#f87171;">PDF</span>
+  </div>
+
+  <!-- Download buttons -->
+  <div style="display:flex;gap:8px;margin-left:auto;">
+    <button id="btn-dl-sel" onclick="downloadLogs('selected')" disabled
+            style="display:inline-flex;align-items:center;gap:6px;
+                   background:rgba(248,113,113,.06);border:1px solid #1e1e1e;color:#8a8880;
+                   border-radius:8px;padding:6px 14px;cursor:not-allowed;font-size:12px;font-weight:600;transition:all .15s;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download Selected
+    </button>
+    <button id="btn-dl-all" onclick="downloadLogs('all')"
+            style="display:inline-flex;align-items:center;gap:6px;
+                   background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.45);color:#f87171;
+                   border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
+            onmouseover="this.style.background='rgba(248,113,113,.25)'"
+            onmouseout="this.style.background='rgba(248,113,113,.12)'">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download All as PDF
+    </button>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Event Log</span>
+    <span class="card-badge" id="log-showing">0</span>
+  </div>
+  <div class="table-wrap" style="max-height:540px;">
+    <table class="soc-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th><th>Time</th><th>Type</th>
+          <th>Source IP</th><th>Severity</th><th>Message</th>
+          <th style="width:90px;text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail panel (slides in from right) -->
+<div id="detail-panel">
+  <div class="dp-header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c8c4be" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span style="font-size:13px;font-weight:700;color:#f0ede8;">Log Details</span>
+    </div>
+    <button onclick="closeDetail()"
+            style="background:rgba(255,255,255,.06);border:1px solid #1e1e1e;color:#8a8880;
+                   cursor:pointer;padding:4px 9px;border-radius:6px;font-size:16px;line-height:1;
+                   transition:all .15s;"
+            onmouseover="this.style.background='rgba(255,255,255,.12)';this.style.color='#f0ede8'"
+            onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.color='#8a8880'">×</button>
+  </div>
+  <div class="dp-body" id="detail-content"></div>
+</div>
+
+<!-- Confirm overlay -->
+<div id="confirm-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Confirm Delete</h3>
+    <p id="confirm-msg"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
+      <button id="confirm-ok"
+        style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.5);color:#f87171;
+               border-radius:8px;padding:8px 22px;cursor:pointer;font-weight:700;font-size:13px;">
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _logs    = [];
+let _selIdxs = new Set();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function typePill(type) {
+  const t = (type||'ALERT').toUpperCase();
+  if (t==='FIREWALL') return '<span class="pill pill-firewall">FIREWALL</span>';
+  if (t==='HONEYPOT') return '<span class="pill pill-honeypot">HONEYPOT</span>';
+  return '<span class="pill pill-low">ALERT</span>';
+}
+function sevPill(sev) {
+  const s = (sev||'').toUpperCase();
+  if (s==='HIGH')   return '<span class="pill pill-attack">HIGH</span>';
+  if (s==='MEDIUM') return '<span class="pill pill-medium">MEDIUM</span>';
+  return '<span class="pill pill-low">LOW</span>';
+}
+function fmtTs(ts) {
+  if (!ts) return '--';
+  try { return new Date(ts.endsWith('Z')?ts:ts+'Z').toLocaleString('en-US',{hour12:true}); }
+  catch { return ts; }
+}
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function getCsrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+function showToast(msg, type) {
+  const col = type==='error' ? '#f87171' : '#4ade80';
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:#0f0f0f;border:1px solid ${col};color:${col};
+    border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;
+    box-shadow:0 4px 20px rgba(0,0,0,.5);transition:opacity .4s;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),400); }, 3000);
+}
+
+// ── Selection UI ──────────────────────────────────────────────────────────────
+function updateSelUI() {
+  const n       = _selIdxs.size;
+  const hint    = document.getElementById('sel-hint');
+  const badge   = document.getElementById('sel-badge');
+  const btnDel  = document.getElementById('btn-del-sel');
+  const btnDl   = document.getElementById('btn-dl-sel');
+
+  badge.textContent = n + ' selected';
+  badge.style.display = n > 0 ? 'inline' : 'none';
+  hint.style.display  = n > 0 ? 'none'   : 'inline';
+
+  if (n > 0) {
+    btnDel.disabled = false;
+    btnDel.style.cssText += ';background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.5);color:#f87171;cursor:pointer;';
+    btnDl.disabled = false;
+    btnDl.style.cssText  += ';background:rgba(248,113,113,.15);border-color:rgba(248,113,113,.5);color:#f87171;cursor:pointer;';
+  } else {
+    btnDel.disabled = true;
+    btnDel.style.cssText += ';background:rgba(239,68,68,.06);border-color:#1e1e1e;color:#8a8880;cursor:not-allowed;';
+    btnDl.disabled  = true;
+    btnDl.style.cssText  += ';background:rgba(248,113,113,.06);border-color:#1e1e1e;color:#8a8880;cursor:not-allowed;';
+  }
+}
+
+// ── Row click — select + show detail ─────────────────────────────────────────
+function selectRow(i) {
+  if (_selIdxs.has(i)) _selIdxs.delete(i);
+  else                  _selIdxs.add(i);
+  const row = document.getElementById('row-'+i);
+  if (row) row.classList.toggle('row-selected', _selIdxs.has(i));
+  updateSelUI();
+  showDetail(_logs[i]);
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function showDetail(log) {
+  if (!log) return;
+  const content = document.getElementById('detail-content');
+
+  const sevColor = {HIGH:'#f87171', MEDIUM:'#fbbf24', LOW:'#4ade80'}[(log.severity||'').toUpperCase()] || '#4ade80';
+
+  const fields = [
+    ['Severity',   sevPill(log.severity)],
+    ['Type',       typePill(log.type)],
+    ['Source IP',  `<span class="mono" style="font-size:13px;color:#c8c4be;">${escHtml(log.ip||'--')}</span>`],
+    ['Timestamp',  `<span class="mono" style="font-size:12px;">${escHtml(fmtTs(log.timestamp))}</span>`],
+    ['Time',       `<span class="mono">${escHtml(log.time||'--')}</span>`],
+    ['Message',
+     `<div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:10px 12px;
+                  font-size:12px;color:#8a8880;line-height:1.7;white-space:pre-wrap;">${escHtml(log.msg||'--')}</div>`],
+    ['Log ID',     `<span class="mono" style="font-size:11px;color:#3a3836;">${escHtml(log._id||'--')}</span>`],
+  ];
+
+  const shown = new Set(['_id','timestamp','time','type','ip','severity','msg','_deleted_at']);
+  for (const [k, v] of Object.entries(log)) {
+    if (!shown.has(k)) {
+      fields.push([k, `<span class="mono" style="font-size:12px;color:#8a8880;">${escHtml(String(v))}</span>`]);
+    }
+  }
+
+  content.innerHTML = fields.map(([label, val]) => `
+    <div class="dp-field">
+      <div class="dp-label">${escHtml(label)}</div>
+      <div class="dp-value">${val}</div>
+    </div>`).join('') +
+  `<div style="margin-top:20px;padding-top:16px;border-top:1px solid #1e1e1e;">
+    <button data-lid="${escHtml(log._id||'')}" onclick="deleteLogFromPanel(this)"
+      style="display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;
+             background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+             border-radius:8px;padding:9px 16px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
+      onmouseover="this.style.background='rgba(239,68,68,.25)'"
+      onmouseout="this.style.background='rgba(239,68,68,.12)'">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+      </svg>
+      Move to Recycle Bin
+    </button>
+  </div>`;
+
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+function filterRefresh() {
+  _selIdxs.clear();
+  updateSelUI();
+  closeDetail();
+  refresh();
+}
+
+async function refresh() {
+  const sevQ  = document.getElementById('f-sev').value;
+  const typeQ = document.getElementById('f-type').value;
+  const ipQ   = document.getElementById('f-ip').value.trim();
+  try {
+    const res = await fetch(`/api/logs?severity=${sevQ}&type=${typeQ}&ip=${encodeURIComponent(ipQ)}`,{cache:'no-store'});
+    if (!res.ok) return;
+    const data = await res.json();
+    _logs = data.logs || [];
+
+    document.getElementById('log-total').textContent    = data.total || 0;
+    document.getElementById('log-showing').textContent  = _logs.length + ' events';
+    document.getElementById('log-high').textContent     = _logs.filter(l=>(l.severity||'').toUpperCase()==='HIGH').length;
+    document.getElementById('log-med').textContent      = _logs.filter(l=>(l.severity||'').toUpperCase()==='MEDIUM').length;
+    document.getElementById('log-honeypot').textContent = _logs.filter(l=>(l.type||'').toUpperCase()==='HONEYPOT').length;
+    document.getElementById('log-fw').textContent       = _logs.filter(l=>(l.type||'').toUpperCase()==='FIREWALL').length;
+
+    const tb = document.getElementById('trash-badge');
+    if (tb) { const tc = data.trash_count||0; tb.textContent=tc; tb.style.display=tc>0?'inline':'none'; }
+
+    for (const idx of _selIdxs) { if (idx >= _logs.length) _selIdxs.delete(idx); }
+
+    const body = document.getElementById('log-body');
+    if (!_logs.length) {
+      body.innerHTML = '<tr><td colspan="7"><div class="empty-state">No events found.</div></td></tr>';
+      updateSelUI();
+      return;
+    }
+
+    body.innerHTML = _logs.map((l, i) => `
+      <tr id="row-${i}" class="log-row${_selIdxs.has(i)?' row-selected':''}" onclick="selectRow(${i})">
+        <td class="mono" style="font-size:10px;color:#3a3836;">${fmtTs(l.timestamp)}</td>
+        <td class="mono" style="font-size:12px;">${escHtml(l.time||'--')}</td>
+        <td>${typePill(l.type)}</td>
+        <td class="mono" style="font-size:12px;">${escHtml(l.ip||'--')}</td>
+        <td>${sevPill(l.severity)}</td>
+        <td style="font-size:11px;color:#8a8880;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(l.msg||'--')}</td>
+        <td style="text-align:center;white-space:nowrap;">
+          <button data-lid="${escHtml(l._id||'')}"
+                  onclick="event.stopPropagation();deleteLog(this)"
+                  title="Move to recycle bin"
+                  style="display:inline-flex;align-items:center;gap:4px;
+                         background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);color:#f87171;
+                         border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;"
+                  onmouseover="this.style.background='rgba(239,68,68,.25)';this.style.borderColor='#f87171'"
+                  onmouseout="this.style.background='rgba(239,68,68,.1)';this.style.borderColor='rgba(239,68,68,.4)'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+            Delete
+          </button>
+        </td>
+      </tr>`).join('');
+
+    updateSelUI();
+  } catch(e) {}
+}
+
+// ── Single delete (table button) ──────────────────────────────────────────────
+async function deleteLog(btn) {
+  const lid = btn.dataset.lid;
+  if (!lid) { showToast('Cannot delete: log has no ID','error'); return; }
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.textContent = '…';
+  const r = await fetch(`/api/logs/${encodeURIComponent(lid)}`,{
+    method:'DELETE', headers:{'X-CSRFToken':getCsrf()},
+  });
+  if (r.ok) {
+    showToast('Moved to recycle bin','success');
+    closeDetail();
+    await refresh();
+  } else {
+    const d = await r.json().catch(()=>({}));
+    showToast(d.error||'Delete failed','error');
+    btn.disabled=false; btn.innerHTML=orig;
+  }
+}
+
+// ── Single delete (detail panel button) ──────────────────────────────────────
+async function deleteLogFromPanel(btn) {
+  const lid = btn.dataset.lid;
+  if (!lid) return;
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Deleting…';
+  const r = await fetch(`/api/logs/${encodeURIComponent(lid)}`,{
+    method:'DELETE', headers:{'X-CSRFToken':getCsrf()},
+  });
+  if (r.ok) {
+    showToast('Moved to recycle bin','success');
+    closeDetail();
+    _selIdxs.clear();
+    await refresh();
+  } else {
+    const d = await r.json().catch(()=>({}));
+    showToast(d.error||'Delete failed','error');
+    btn.disabled=false; btn.innerHTML=orig;
+  }
+}
+
+// ── Delete selected ───────────────────────────────────────────────────────────
+async function deleteSelectedLogs() {
+  if (!_selIdxs.size) return;
+  const ids = [..._selIdxs].map(i => _logs[i]?._id).filter(Boolean);
+  if (!ids.length) return;
+  const btn = document.getElementById('btn-del-sel');
+  const orig = btn.innerHTML;
+  btn.disabled=true; btn.textContent='Deleting…';
+  let ok=0, fail=0;
+  for (const lid of ids) {
+    const r = await fetch(`/api/logs/${encodeURIComponent(lid)}`,{
+      method:'DELETE', headers:{'X-CSRFToken':getCsrf()},
+    });
+    if (r.ok) ok++; else fail++;
+  }
+  showToast(`${ok} log${ok!==1?'s':''} moved to recycle bin${fail?' ('+fail+' failed)':''}`, fail?'error':'success');
+  _selIdxs.clear();
+  closeDetail();
+  btn.innerHTML=orig;
+  await refresh();
+}
+
+// ── Delete all ────────────────────────────────────────────────────────────────
+function confirmDeleteAll() {
+  if (!_logs.length) { showToast('No logs to delete','error'); return; }
+  document.getElementById('confirm-title').textContent = 'Delete All Visible Logs?';
+  document.getElementById('confirm-msg').textContent   =
+    `Move all ${_logs.length} visible log entr${_logs.length===1?'y':'ies'} to the Recycle Bin. You can restore them later.`;
+  document.getElementById('confirm-ok').textContent = 'Delete All';
+  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-ok').onclick = async () => {
+    closeConfirm();
+    const btn = document.getElementById('btn-del-all');
+    const orig = btn.innerHTML;
+    btn.disabled=true; btn.textContent='Deleting…';
+    const logsToDelete = [..._logs];
+    let ok=0, fail=0;
+    for (const l of logsToDelete) {
+      if (!l._id) { fail++; continue; }
+      const r = await fetch(`/api/logs/${encodeURIComponent(l._id)}`,{
+        method:'DELETE', headers:{'X-CSRFToken':getCsrf()},
+      });
+      if (r.ok) ok++; else fail++;
+    }
+    showToast(`${ok} log${ok!==1?'s':''} moved to recycle bin${fail?' ('+fail+' failed)':''}`, fail?'error':'success');
+    _selIdxs.clear();
+    closeDetail();
+    btn.innerHTML=orig; btn.disabled=false;
+    await refresh();
+  };
+}
+
+// ── Confirm dialog ────────────────────────────────────────────────────────────
+function closeConfirm() {
+  document.getElementById('confirm-overlay').style.display='none';
+}
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target===document.getElementById('confirm-overlay')) closeConfirm();
+});
+
+// ── PDF Download ──────────────────────────────────────────────────────────────
+const _loadScript = src => new Promise((res,rej) => {
+  if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+  const s = document.createElement('script');
+  s.src=src; s.onload=res; s.onerror=rej;
+  document.head.appendChild(s);
+});
+
+async function downloadLogs(scope) {
+  const source = scope==='selected' ? _logs.filter((_,i)=>_selIdxs.has(i)) : _logs;
+  if (!source.length) return;
+  const btn = scope==='selected' ? document.getElementById('btn-dl-sel') : document.getElementById('btn-dl-all');
+  const orig = btn.innerHTML;
+  btn.textContent='Generating…'; btn.disabled=true;
+  try {
+    await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  } catch(e) {
+    btn.innerHTML=orig; btn.disabled=(scope==='selected' && _selIdxs.size===0);
+    alert('Failed to load PDF library — check internet connection.'); return;
+  }
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const W=doc.internal.pageSize.width, H=doc.internal.pageSize.height, ML=12;
+  const now = new Date();
+  const capTs = now.toLocaleString();
+  const high=source.filter(l=>(l.severity||'').toUpperCase()==='HIGH').length;
+  const med =source.filter(l=>(l.severity||'').toUpperCase()==='MEDIUM').length;
+  const low =source.length-high-med;
+
+  // ── Dark navy header — matches capture.html theme ──────────────────────────
+  doc.setFillColor(15,23,42); doc.rect(0,0,W,22,'F');
+  doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(241,245,249);
+  doc.text('SOC/SIEM', ML, 10);
+  doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+  doc.text('Security Event Log Report', ML, 17);
+  doc.setFontSize(7.5);
+  doc.text(`Generated: ${capTs}`, W-ML, 10, {align:'right'});
+  doc.text('Classification: INTERNAL', W-ML, 17, {align:'right'});
+
+  // ── White stat cards — identical to capture.html ──────────────────────────
+  const statY=26, statW=(W-20)/4;
+  const scopeLabel=scope==='selected'?`Selected (${source.length})`:`All visible (${source.length})`;
+  [
+    {label:'Scope',     val:scopeLabel,      col:[30,41,59]  },
+    {label:'HIGH',      val:String(high),    col:[220,38,38] },
+    {label:'MEDIUM',    val:String(med),     col:[217,119,6] },
+    {label:'LOW / INFO',val:String(low),     col:[22,163,74] },
+  ].forEach((s,i)=>{
+    const x=10+i*statW;
+    doc.setFillColor(248,250,252); doc.rect(x,statY,statW-2,14,'F');
+    doc.setFontSize(7); doc.setTextColor(100,116,139); doc.setFont('helvetica','normal');
+    doc.text(s.label.toUpperCase(), x+3, statY+5);
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...s.col);
+    doc.text(s.val, x+3, statY+12);
+  });
+
+  // ── Table ─────────────────────────────────────────────────────────────────
+  doc.autoTable({
+    startY: statY+18,
+    head:[['#','Timestamp','Time','Type','Source IP','Severity','Message']],
+    body:source.map((l,i)=>[
+      i+1,
+      l.timestamp?new Date(l.timestamp+(l.timestamp.endsWith('Z')?'':'Z')).toLocaleString('en-US',{hour12:true}):'--',
+      l.time||'--', (l.type||'ALERT').toUpperCase(), l.ip||'--',
+      (l.severity||'').toUpperCase(), l.msg||'--',
+    ]),
+    styles:{
+      fontSize:7.5, cellPadding:{top:2.2,bottom:2.2,left:2.5,right:2},
+      font:'helvetica', overflow:'ellipsize',
+      lineColor:[226,232,240], lineWidth:0.1,
+    },
+    headStyles:{
+      fillColor:[15,23,42], textColor:[241,245,249],
+      fontStyle:'bold', fontSize:7.5,
+      cellPadding:{top:3,bottom:3,left:2.5,right:2},
+    },
+    alternateRowStyles:{fillColor:[248,250,252]},
+    columnStyles:{
+      0:{cellWidth:10,halign:'right'},
+      1:{cellWidth:42},
+      2:{cellWidth:22},
+      3:{cellWidth:22,halign:'center'},
+      4:{cellWidth:30},
+      5:{cellWidth:20,halign:'center'},
+      6:{cellWidth:'auto'},
+    },
+    didParseCell(data){
+      if (data.section!=='body') return;
+      const sev=(data.row.raw[5]||'').toUpperCase();
+      if (sev==='HIGH')  {data.cell.styles.fillColor=[255,241,241];data.cell.styles.textColor=[153,27,27];data.cell.styles.fontStyle='bold';}
+      else if (sev==='MEDIUM'){data.cell.styles.fillColor=[255,252,235];data.cell.styles.textColor=[133,77,14];}
+    },
+    margin:{left:ML,right:ML},
+  });
+
+  // ── Footer on every page ──────────────────────────────────────────────────
+  const pages=doc.internal.getNumberOfPages();
+  for (let i=1;i<=pages;i++){
+    doc.setPage(i);
+    doc.setDrawColor(226,232,240); doc.line(ML,H-8,W-ML,H-8);
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+    doc.text(`SOC/SIEM Platform  ·  Security Event Log  |  ${capTs}`, ML, H-3.5);
+    doc.text(`Page ${i} of ${pages}`, W-ML, H-3.5, {align:'right'});
+  }
+
+  const fileTs=now.toISOString().replace(/[:.]/g,'-').slice(0,19);
+  const label=scope==='selected'?`selected_${source.length}`:'all';
+  const blob=doc.output('blob');
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`soc_logs_${label}_${fileTs}.pdf`;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1500);
+  btn.innerHTML=orig; btn.disabled=(scope==='selected'&&_selIdxs.size===0);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+['f-sev','f-type','f-ip'].forEach(id => {
+  document.getElementById(id).addEventListener('change', filterRefresh);
+  document.getElementById(id).addEventListener('input',  filterRefresh);
+});
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+{% endblock %}

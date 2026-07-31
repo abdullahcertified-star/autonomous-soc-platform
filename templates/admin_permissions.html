@@ -1,0 +1,273 @@
+{% extends 'base_soc.html' %}
+{% block title %}Access Permissions{% endblock %}
+{% block page_title %}Access Permissions{% endblock %}
+
+{% block content %}
+<style>
+  /* matrix layout */
+  .perm-matrix {
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+  }
+  .perm-matrix th {
+    padding:10px 14px;
+    border-bottom:1px solid var(--border);
+    font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.07em;
+    color:var(--text-muted);
+    text-align:center;
+    background:var(--bg2);
+    position:sticky; top:0; z-index:1;
+    white-space:nowrap;
+  }
+  .perm-matrix th.col-resource { text-align:left; min-width:120px; }
+  .perm-matrix th.col-action   { text-align:left; min-width:90px; }
+
+  .perm-matrix td {
+    padding:9px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.04);
+    vertical-align:middle;
+    color:var(--text);
+  }
+  .perm-matrix tr:last-child td { border-bottom:none; }
+  .perm-matrix tr:hover td { background:rgba(255,255,255,0.02); }
+
+  /* resource group header row */
+  .resource-header td {
+    background:rgba(200,196,190,.04);
+    border-top:1px solid var(--border);
+    border-bottom:1px solid rgba(200,196,190,.12) !important;
+    padding:7px 14px;
+    font-size:11px; font-weight:700;
+    letter-spacing:.05em;
+    color:var(--accent);
+    text-transform:capitalize;
+  }
+
+  /* action badge */
+  .action-pill {
+    display:inline-block; padding:2px 8px; border-radius:99px;
+    font-size:10px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.05em;
+  }
+  .ap-read   { background:rgba(200,196,190,.12); color:var(--accent); border:1px solid rgba(200,196,190,.25); }
+  .ap-write  { background:rgba(245,158,11,.12); color:#fbbf24;       border:1px solid rgba(245,158,11,.25); }
+  .ap-delete { background:rgba(239,68,68,.12);  color:#f87171;       border:1px solid rgba(239,68,68,.25); }
+  .ap-manage { background:rgba(168,85,247,.12); color:#c084fc;       border:1px solid rgba(168,85,247,.25); }
+
+  /* role column headers */
+  .col-standard { color:#4ade80 !important; }
+  .col-power    { color:#fbbf24 !important; }
+  .col-super    { color:#f87171 !important; }
+
+  /* checkbox toggle */
+  .perm-check { display:none; }
+  .perm-toggle {
+    display:flex; align-items:center; justify-content:center;
+    width:28px; height:28px; border-radius:8px;
+    cursor:pointer; margin:auto;
+    border:1px solid var(--border);
+    background:var(--bg3);
+    transition:all .15s;
+    user-select:none;
+    font-size:14px;
+  }
+  .perm-check:checked + .perm-toggle {
+    background:rgba(34,197,94,.15);
+    border-color:rgba(34,197,94,.4);
+    color:#4ade80;
+  }
+  .perm-toggle:hover {
+    border-color:var(--border2);
+    background:rgba(255,255,255,.05);
+  }
+  .perm-check:checked + .perm-toggle:hover {
+    background:rgba(239,68,68,.15);
+    border-color:rgba(239,68,68,.4);
+    color:#f87171;
+  }
+  .perm-cell { text-align:center; }
+  .saving-dot {
+    display:none; width:6px; height:6px; border-radius:50%;
+    background:var(--accent); margin:auto;
+    animation:dot-pulse .8s infinite;
+  }
+  @keyframes dot-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* toast override colours */
+  .toast        { position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+                  padding:10px 18px; border-radius:8px; font-size:12px; font-weight:600;
+                  z-index:9999; white-space:nowrap; animation:toast-in .2s ease; }
+  .toast-success{ background:#052e16; border:1px solid #166534; color:#4ade80; }
+  .toast-error  { background:#1c0a0a; border:1px solid #7f1d1d; color:#f87171; }
+  @keyframes toast-in { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%)} }
+
+  .legend { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  .legend-item { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); }
+  .legend-box { width:16px; height:16px; border-radius:4px; flex-shrink:0; }
+  .leg-on  { background:rgba(34,197,94,.2);  border:1px solid rgba(34,197,94,.4); }
+  .leg-off { background:var(--bg3);           border:1px solid var(--border); }
+</style>
+
+<!-- header bar -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+  <div>
+    <div style="font-size:11px;color:var(--text-muted);">
+      Click a cell to grant or revoke a permission for that role. Changes take effect immediately.
+    </div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box leg-on"></div> Granted</div>
+    <div class="legend-item"><div class="legend-box leg-off"></div> Not granted</div>
+    <div class="legend-item" style="margin-left:8px;">
+      <span style="font-size:10px;">Roles:</span>
+      <span style="color:#4ade80;font-weight:600;">Standard</span>
+      <span style="color:#fbbf24;font-weight:600;">Power</span>
+      <span style="color:#f87171;font-weight:600;">Super</span>
+    </div>
+  </div>
+</div>
+
+<!-- stat cards -->
+<div class="stats-row" style="grid-template-columns:repeat({{ roles|length }},1fr);margin-bottom:16px;">
+  {% for role in roles %}
+  {% set dname = role_display.get(role.name, role.name) %}
+  {% set cnt = role_perm_map[role.id] | length %}
+  <div class="stat-card {% if role.name=='admin' %}red{% elif role.name=='analyst' %}yellow{% else %}green{% endif %}">
+    <div class="stat-label">{{ dname }}</div>
+    <div class="stat-value">{{ cnt }}</div>
+    <div class="stat-sub">permissions granted</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- matrix card -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Permissions Matrix</div>
+    <span class="card-badge" id="total-perms">
+      {% set total = namespace(n=0) %}
+      {% for ps in by_resource.values() %}{% set total.n = total.n + ps|length %}{% endfor %}
+      {{ total.n }} permissions
+    </span>
+  </div>
+
+  <div class="table-wrap" style="max-height:620px;">
+    <table class="perm-matrix">
+      <thead>
+        <tr>
+          <th class="col-resource">Resource</th>
+          <th class="col-action">Action</th>
+          {% for role in roles %}
+          <th class="col-{{ 'standard' if role.name=='viewer' else 'power' if role.name=='analyst' else 'super' }}">
+            {{ role_display.get(role.name, role.name) }}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for resource, perms in by_resource.items() %}
+
+        <!-- resource group header -->
+        <tr class="resource-header">
+          <td colspan="{{ roles|length + 2 }}" style="text-transform:uppercase;letter-spacing:.08em;">
+            {{ resource }}
+          </td>
+        </tr>
+
+        {% for perm in perms %}
+        <tr data-perm-id="{{ perm.id }}">
+          <td style="color:var(--text-muted);font-size:11px;padding-left:24px;">{{ perm.description or perm.name }}</td>
+          <td>
+            <span class="action-pill ap-{{ perm.action }}">{{ perm.action }}</span>
+          </td>
+          {% for role in roles %}
+          {% set has = perm.id in role_perm_map[role.id] %}
+          <td class="perm-cell">
+            <label style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+              <input type="checkbox" class="perm-check"
+                     {% if has %}checked{% endif %}
+                     data-role-id="{{ role.id }}"
+                     data-perm-id="{{ perm.id }}"
+                     onchange="togglePerm(this)" />
+              <span class="perm-toggle" title="{% if has %}Granted — click to revoke{% else %}Not granted — click to allow{% endif %}">
+                {% if has %}✓{% else %}&nbsp;{% endif %}
+              </span>
+              <span class="saving-dot" id="dot-{{ role.id }}-{{ perm.id }}"></span>
+            </label>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function togglePerm(checkbox) {
+  const roleId = parseInt(checkbox.dataset.roleId);
+  const permId = parseInt(checkbox.dataset.permId);
+  const grant  = checkbox.checked;
+  const toggle = checkbox.nextElementSibling;
+  const dot    = document.getElementById(`dot-${roleId}-${permId}`);
+
+  // Optimistic UI
+  toggle.textContent = grant ? '✓' : ' ';
+  toggle.title = grant ? 'Granted — click to revoke' : 'Not granted — click to allow';
+  dot.style.display = 'block';
+
+  try {
+    const resp = await fetch('/admin/permissions/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({ role_id: roleId, perm_id: permId, grant }),
+    });
+    if (!resp.ok) throw new Error('Server error');
+    updateStatCards();
+    showToast(grant ? '✓ Permission granted' : '✗ Permission revoked', grant ? 'success' : 'error');
+  } catch (err) {
+    // Revert on failure
+    checkbox.checked = !grant;
+    toggle.textContent = !grant ? '✓' : ' ';
+    showToast('Failed to update permission', 'error');
+  } finally {
+    dot.style.display = 'none';
+  }
+}
+
+function updateStatCards() {
+  // Recount granted permissions per role column and update stat cards
+  const statValues = document.querySelectorAll('.stat-value');
+  const roles = document.querySelectorAll('thead th:not(.col-resource):not(.col-action)');
+  roles.forEach((th, colIdx) => {
+    const checkboxes = document.querySelectorAll(`tbody input.perm-check:nth-of-type(${colIdx + 1})`);
+    // Simpler: count checked boxes for each role column
+    const allChecks = document.querySelectorAll('tbody tr:not(.resource-header) td.perm-cell');
+    let count = 0;
+    allChecks.forEach((td, i) => {
+      if (i % roles.length === colIdx) {
+        if (td.querySelector('input.perm-check:checked')) count++;
+      }
+    });
+    if (statValues[colIdx]) statValues[colIdx].textContent = count;
+  });
+}
+
+// Override showToast to use local styles
+function showToast(msg, type) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t && t.remove(), 2500);
+}
+</script>
+{% endblock %}

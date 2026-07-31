@@ -1,0 +1,415 @@
+/* ============================================================
+   hacker.css — Neon Hacker Theme
+   Used by: login page, register page, honeypot admin login
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+:root {
+  --hk-bg:      #010409;
+  --hk-bg2:     #0d1117;
+  --hk-bg3:     #161b22;
+  --hk-border:  #21262d;
+  --hk-green:   #00ff41;
+  --hk-green2:  #39d353;
+  --hk-green-d: rgba(0,255,65,.08);
+  --hk-red:     #ff3040;
+  --hk-red-d:   rgba(255,48,64,.08);
+  --hk-cyan:    #00d4ff;
+  --hk-text:    #c9d1d9;
+  --hk-muted:   #8b949e;
+  --hk-dim:     #30363d;
+  --hk-mono:    'Share Tech Mono', monospace;
+  --hk-display: 'Rajdhani', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; }
+
+body.hacker-body {
+  font-family: var(--hk-mono);
+  background: var(--hk-bg);
+  color: var(--hk-text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* scanline overlay */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,65,.015) 2px,
+      rgba(0,255,65,.015) 4px
+    );
+}
+
+/* ── Matrix rain bg effect (pure CSS) ── */
+body.hacker-body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse 100% 80% at 50% -10%, rgba(0,255,65,.06) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Card ── */
+.hk-card {
+  position: relative; z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background: var(--hk-bg2);
+  border: 1px solid rgba(0,255,65,.25);
+  border-radius: 8px;
+  padding: 2.5rem;
+  box-shadow:
+    0 0 40px rgba(0,255,65,.08),
+    0 0 80px rgba(0,255,65,.03),
+    inset 0 1px 0 rgba(0,255,65,.08);
+  animation: hk-slide 0.4s ease both;
+}
+
+@keyframes hk-slide {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header ── */
+.hk-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.hk-logo {
+  width: 52px; height: 52px;
+  border-radius: 8px;
+  margin: 0 auto 1rem;
+  background: var(--hk-green-d);
+  border: 1px solid rgba(0,255,65,.3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  color: var(--hk-green);
+  box-shadow: 0 0 20px rgba(0,255,65,.2);
+  animation: hk-glow 2s infinite;
+}
+
+@keyframes hk-glow {
+  0%,100% { box-shadow: 0 0 10px rgba(0,255,65,.2); }
+  50%      { box-shadow: 0 0 24px rgba(0,255,65,.5); }
+}
+
+.hk-header h1 {
+  font-family: var(--hk-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--hk-green);
+  text-shadow: 0 0 20px rgba(0,255,65,.5);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.hk-header p {
+  color: var(--hk-muted);
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+  letter-spacing: .04em;
+}
+
+/* Blinking cursor */
+.hk-cursor::after {
+  content: '_';
+  animation: blink .8s step-end infinite;
+  color: var(--hk-green);
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── Form ── */
+.hk-form-group {
+  margin-bottom: 1.2rem;
+}
+
+.hk-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--hk-green);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin-bottom: 0.4rem;
+}
+.hk-label::before { content: '> '; color: var(--hk-muted); }
+
+.hk-input {
+  width: 100%;
+  background: var(--hk-bg3);
+  border: 1px solid var(--hk-border);
+  border-radius: 4px;
+  color: var(--hk-green);
+  font-family: var(--hk-mono);
+  font-size: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  caret-color: var(--hk-green);
+}
+
+.hk-input::placeholder { color: var(--hk-dim); }
+
+.hk-input:focus {
+  border-color: rgba(0,255,65,.5);
+  box-shadow: 0 0 0 3px rgba(0,255,65,.08), 0 0 12px rgba(0,255,65,.15);
+}
+
+/* ── Button ── */
+.hk-btn {
+  display: block;
+  width: 100%;
+  padding: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--hk-green);
+  border-radius: 4px;
+  color: var(--hk-green);
+  font-family: var(--hk-display);
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: all .15s;
+  text-shadow: 0 0 8px rgba(0,255,65,.5);
+  box-shadow: 0 0 10px rgba(0,255,65,.1);
+}
+
+.hk-btn:hover {
+  background: var(--hk-green-d);
+  box-shadow: 0 0 20px rgba(0,255,65,.3);
+  transform: translateY(-1px);
+}
+
+.hk-btn:active { transform: translateY(0); }
+
+/* ── Flash messages ── */
+.hk-flashes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1rem; }
+
+.hk-flash {
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  border-left: 3px solid;
+}
+
+.hk-flash-error   { background: var(--hk-red-d);   color: var(--hk-red);   border-color: var(--hk-red); }
+.hk-flash-success { background: var(--hk-green-d); color: var(--hk-green); border-color: var(--hk-green); }
+.hk-flash-info    { background: rgba(0,212,255,.07); color: var(--hk-cyan); border-color: var(--hk-cyan); }
+.hk-flash-debug   { background: rgba(0,255,65,.05); color: var(--hk-muted); border-color: var(--hk-dim); word-break: break-all; }
+
+/* ── Footer / links ── */
+.hk-footer {
+  margin-top: 1.4rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--hk-muted);
+}
+
+.hk-footer a { color: var(--hk-green); text-decoration: none; }
+.hk-footer a:hover { text-shadow: 0 0 8px rgba(0,255,65,.6); }
+
+.hk-divider {
+  display: flex; align-items: center; gap: 0.7rem;
+  margin: 1.2rem 0;
+  color: var(--hk-dim);
+  font-size: 0.75rem;
+}
+.hk-divider::before, .hk-divider::after {
+  content: ''; flex: 1;
+  height: 1px; background: var(--hk-border);
+}
+
+/* ── Checkbox ── */
+.hk-checkbox-group {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.8rem; color: var(--hk-muted);
+}
+.hk-checkbox-group input[type="checkbox"] { accent-color: var(--hk-green); }
+
+/* ── Password hints ── */
+.hk-hints { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+.hk-hint {
+  font-size: 0.68rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 3px;
+  background: var(--hk-bg3);
+  border: 1px solid var(--hk-border);
+  color: var(--hk-dim);
+  transition: all .2s;
+}
+.hk-hint.met { border-color: rgba(0,255,65,.4); color: var(--hk-green); background: var(--hk-green-d); }
+
+/* ── Input wrapper (password toggle) ── */
+.hk-input-wrap { position: relative; }
+.hk-input-wrap .hk-input { padding-right: 2.5rem; }
+.hk-pwd-toggle {
+  position: absolute; right: 0.7rem; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  color: var(--hk-muted); cursor: pointer;
+  font-size: 0.95rem;
+  transition: color .15s;
+}
+.hk-pwd-toggle:hover { color: var(--hk-green); }
+
+/* ── HONEYPOT PAGE SPECIFICS ── */
+
+.hk-access-denied {
+  text-align: center;
+  padding: 1.5rem;
+  border: 1px solid rgba(255,48,64,.3);
+  border-radius: 6px;
+  background: var(--hk-red-d);
+  margin-bottom: 1rem;
+}
+
+.hk-access-denied p {
+  color: var(--hk-red);
+  font-size: 1rem;
+  font-family: var(--hk-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  animation: hk-flicker .15s infinite;
+}
+
+@keyframes hk-flicker {
+  0%,100%{ opacity: 1; }
+  50%    { opacity: .85; }
+}
+
+.hk-scan-line {
+  position: fixed; inset: 0;
+  background: linear-gradient(
+    transparent 0%,
+    rgba(0,255,65,.03) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: scan 6s linear infinite;
+}
+
+@keyframes scan {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100vh; }
+}
+
+/* ── TRAP SCREEN (shown after form submit) ── */
+
+.hk-trap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0.5rem 0;
+  animation: hk-slide 0.4s ease both;
+}
+
+.hk-trap-icon {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: rgba(255,48,64,.1);
+  border: 2px solid rgba(255,48,64,.5);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem;
+  margin-bottom: 1.4rem;
+  box-shadow: 0 0 30px rgba(255,48,64,.25), 0 0 60px rgba(255,48,64,.1);
+  animation: hk-pulse-red 1.4s ease-in-out infinite;
+}
+
+@keyframes hk-pulse-red {
+  0%,100% { box-shadow: 0 0 20px rgba(255,48,64,.2); }
+  50%      { box-shadow: 0 0 40px rgba(255,48,64,.5), 0 0 80px rgba(255,48,64,.2); }
+}
+
+.hk-trap-title {
+  font-family: var(--hk-display);
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: var(--hk-red);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  text-shadow: 0 0 20px rgba(255,48,64,.6);
+  margin-bottom: 0.35rem;
+  animation: hk-flicker .15s infinite;
+}
+
+.hk-trap-sub {
+  font-size: 0.82rem;
+  color: var(--hk-muted);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+
+.hk-trap-table {
+  width: 100%;
+  border: 1px solid rgba(255,48,64,.2);
+  border-radius: 6px;
+  background: rgba(255,48,64,.04);
+  padding: 1.2rem 1.4rem;
+  margin-bottom: 1.8rem;
+  text-align: left;
+}
+
+.hk-trap-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(255,48,64,.1);
+  font-size: 0.8rem;
+}
+
+.hk-trap-row:last-child { border-bottom: none; }
+
+.hk-trap-key {
+  color: var(--hk-muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 0.72rem;
+}
+
+.hk-trap-key::before { content: '> '; color: rgba(255,48,64,.5); }
+
+.hk-trap-val {
+  color: var(--hk-red);
+  font-family: var(--hk-mono);
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.hk-trap-warn {
+  font-size: 0.78rem;
+  color: rgba(255,48,64,.6);
+  letter-spacing: .04em;
+  line-height: 1.6;
+  border-top: 1px solid rgba(255,48,64,.15);
+  padding-top: 1.2rem;
+  width: 100%;
+}
+
+.hk-trap-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  background: rgba(255,48,64,.12);
+  border: 1px solid rgba(255,48,64,.3);
+  border-radius: 3px;
+  color: var(--hk-red);
+  font-size: 0.68rem;
+  font-family: var(--hk-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin-bottom: 1.6rem;
+}

@@ -1,0 +1,171 @@
+{% extends "base_soc.html" %}
+{% block title %}Incidents{% endblock %}
+{% block page_title %}Incident Management{% endblock %}
+
+{% block content %}
+
+<div class="stats-row" style="margin-bottom:16px;">
+  <div class="stat-card red">
+    <div class="stat-label">Open / Active</div>
+    <div class="stat-value" id="inc-open">0</div>
+    <div class="stat-sub">requires action</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Resolved</div>
+    <div class="stat-value" id="inc-resolved">0</div>
+    <div class="stat-sub">closed incidents</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Total</div>
+    <div class="stat-value" id="inc-total">0</div>
+    <div class="stat-sub">this session</div>
+  </div>
+  <div class="stat-card orange">
+    <div class="stat-label">Avg Duration</div>
+    <div class="stat-value" id="inc-avg-dur" style="font-size:18px;padding-top:4px;">--</div>
+    <div class="stat-sub">across incidents</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="filters-bar">
+  <select id="f-status" class="filter-input">
+    <option value="ALL">All Status</option>
+    <option value="OPEN">Open</option>
+    <option value="ACTIVE">Active</option>
+    <option value="RESOLVED">Resolved</option>
+  </select>
+  <input id="f-ip" class="filter-input" placeholder="Filter by IP..." />
+  <select id="f-type" class="filter-input">
+    <option value="ALL">All Attack Types</option>
+    <option value="DDoS Flood">DDoS Flood</option>
+    <option value="SYN Flood">SYN Flood</option>
+    <option value="UDP Flood">UDP Flood</option>
+    <option value="Port Scan">Port Scan</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Incident Registry</span>
+    <span class="card-badge" id="showing-count">0 incidents</span>
+  </div>
+  <div class="table-wrap">
+    <table class="soc-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Source IP</th>
+          <th>Attack Type</th>
+          <th>Start</th>
+          <th>End</th>
+          <th>Duration</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="inc-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allIncidents=[];
+
+function fmtDuration(sec) {
+  if (!sec || sec < 1) return '< 1s';
+  const s=Math.floor(sec);
+  if (s<60) return s+'s';
+  const m=Math.floor(s/60), r=s%60;
+  return m+'m '+String(r).padStart(2,'0')+'s';
+}
+
+function sevBar(score) {
+  const color=score>=70?'#ef4444':score>=40?'#eab308':'#22c55e';
+  return `<div style="display:flex;align-items:center;gap:6px;">
+    <div class="conf-bar-wrap" style="width:60px;"><div class="conf-bar-fill" style="width:${score}%;background:${color}"></div></div>
+    <span style="font-size:10px;color:${color}">${score}</span>
+  </div>`;
+}
+
+function statusPill(s) {
+  const map={OPEN:'pill-open',ACTIVE:'pill-active',RESOLVED:'pill-resolved'};
+  const dot=s==='ACTIVE'?'<span class="pill-dot"></span>':'';
+  return `<span class="pill ${map[s]||'pill-normal'}">${dot}${s}</span>`;
+}
+
+function render(incidents) {
+  const statusQ=document.getElementById('f-status').value;
+  const ipQ=document.getElementById('f-ip').value.trim().toLowerCase();
+  const typeQ=document.getElementById('f-type').value;
+
+  const f=incidents.filter(i=>{
+    if(statusQ!=='ALL'&&i.status!==statusQ) return false;
+    if(ipQ&&!(i.source_ip||'').includes(ipQ)) return false;
+    if(typeQ!=='ALL'&&i.attack_type!==typeQ) return false;
+    return true;
+  });
+
+  document.getElementById('showing-count').textContent=`${f.length} incidents`;
+
+  if (f.length) {
+    const resolved=f.filter(i=>i.status==='RESOLVED'&&i.duration_seconds>0);
+    if (resolved.length) {
+      const avg=resolved.reduce((a,b)=>a+(b.duration_seconds||0),0)/resolved.length;
+      document.getElementById('inc-avg-dur').textContent=fmtDuration(avg);
+    }
+  }
+
+  const body=document.getElementById('inc-body');
+  if (!f.length){body.innerHTML='<tr><td colspan="9"><div class="empty-state">No incidents found.</div></td></tr>';return;}
+
+  body.innerHTML=f.map(i=>`<tr>
+    <td class="mono" style="color:#c8c4be">${i.incident_id}</td>
+    <td class="mono">${i.source_ip}</td>
+    <td>${i.attack_type}</td>
+    <td class="mono">${i.start_time}</td>
+    <td class="mono">${i.end_time}</td>
+    <td><span class="duration-badge">${i.duration||'0s'}</span></td>
+    <td>${sevBar(i.severity_score||0)}</td>
+    <td>${statusPill(i.status)}</td>
+    <td>
+      <button class="btn btn-block" onclick="blockIP('${i.source_ip}')">Block IP</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function blockIP(ip) {
+  try {
+    const res=await fetch('/api/firewall/block',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},body:JSON.stringify({ip,reason:'Blocked from incident view'})});
+    if (!res.ok){showToast(`Block failed (${res.status})`,'error');return;}
+    const d=await res.json();
+    showToast(d.status==='blocked'?`${ip} blocked.`:`${ip} ${d.status}`,'success');
+  } catch(e){showToast('Block failed: '+e.message,'error');}
+}
+
+async function refresh() {
+  try {
+    const res=await fetch('/api/incidents',{cache:'no-store'});
+    if (!res.ok) return;
+    const data=await res.json();
+    allIncidents=data.incidents||[];
+    document.getElementById('inc-open').textContent=data.open_count||0;
+    document.getElementById('inc-resolved').textContent=data.resolved_count||0;
+    document.getElementById('inc-total').textContent=data.total||0;
+    render(allIncidents);
+  } catch(e){}
+}
+
+['f-status','f-ip','f-type'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>render(allIncidents));
+  document.getElementById(id).addEventListener('change',()=>render(allIncidents));
+});
+
+refresh();
+setInterval(refresh,3000);
+</script>
+{% endblock %}

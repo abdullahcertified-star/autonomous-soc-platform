@@ -1,0 +1,1495 @@
+{% extends "base_soc.html" %}
+{% block title %}Live Capture{% endblock %}
+{% block page_title %}Live Packet Capture{% endblock %}
+
+{% block content %}
+
+<!-- ══ ATTACK ALERT BANNER ══════════════════════════════════════════════════ -->
+<div id="attack-banner" style="display:none;align-items:center;gap:12px;
+  background:#1a0909;
+  border:1px solid rgba(239,68,68,.6); border-radius:8px;
+  padding:10px 16px; margin-bottom:10px; animation:ab-pulse 2s ease-in-out infinite;">
+  <div style="width:10px;height:10px;border-radius:50%;background:#ef4444;
+    box-shadow:0 0 0 0 rgba(239,68,68,.4);animation:ab-dot 1.4s ease-in-out infinite;flex-shrink:0;"></div>
+  <div>
+    <div style="font-size:11px;font-weight:700;color:#f87171;letter-spacing:.08em;">ATTACK DETECTED</div>
+    <div id="ab-detail" style="font-size:11px;color:#fca5a5;font-family:var(--font-mono);margin-top:1px;"></div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+    <span id="ab-count" style="background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.5);
+      color:#f87171;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;font-family:var(--font-mono);"></span>
+    <button onclick="document.getElementById('attack-banner').style.display=\"none\""
+      style="background:none;border:none;color:#8a8880;cursor:pointer;font-size:16px;line-height:1;padding:0 4px;">✕</button>
+  </div>
+</div>
+
+<!-- ══ STAT BAR ════════════════════════════════════════════════════════════ -->
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+  <div class="lc-stat">
+    <span class="lc-stat-lbl">Total Captured</span>
+    <span class="lc-stat-val" id="sv-total">0</span>
+  </div>
+  <div class="lc-stat">
+    <span class="lc-stat-lbl">Displayed</span>
+    <span class="lc-stat-val" id="sv-shown">0</span>
+  </div>
+  <div class="lc-stat lc-stat-green">
+    <span class="lc-stat-lbl">Packets / sec</span>
+    <span class="lc-stat-val" id="sv-pps">0</span>
+  </div>
+  <div class="lc-stat lc-stat-red">
+    <span class="lc-stat-lbl">Attacks</span>
+    <span class="lc-stat-val" id="sv-attacks">0</span>
+  </div>
+  <div class="lc-stat lc-stat-yellow">
+    <span class="lc-stat-lbl">Suspicious</span>
+    <span class="lc-stat-val" id="sv-suspicious">0</span>
+  </div>
+  <div class="lc-stat lc-stat-blue" style="flex:1;min-width:160px;">
+    <span class="lc-stat-lbl">Capture Status</span>
+    <span class="lc-stat-val" id="sv-status" style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:3px;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;box-shadow:0 0 6px #22c55e;"></span>
+      LIVE
+    </span>
+  </div>
+</div>
+
+<!-- ══ TOOLBAR ══════════════════════════════════════════════════════════════ -->
+<div class="lc-toolbar">
+  <div class="lc-search-wrap">
+    <svg class="lc-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input id="f-search" class="lc-search" type="text"
+           placeholder="Filter by IP, MAC, country, service…"
+           oninput="scheduleRefresh()" />
+  </div>
+
+  <select id="f-proto" class="lc-select" onchange="scheduleRefresh()">
+    <option value="">All Protocols</option>
+    <optgroup label="Web / Mail">
+      <option>HTTP</option><option>HTTPS</option>
+      <option>SMTP</option><option>SMTPS</option>
+      <option>POP3</option><option>POP3S</option>
+      <option>IMAP</option><option>IMAPS</option>
+    </optgroup>
+    <optgroup label="Transport">
+      <option>TCP</option><option>UDP</option>
+      <option>ICMP</option><option>IGMP</option>
+      <option>GRE</option><option>ESP</option>
+    </optgroup>
+    <optgroup label="Infrastructure">
+      <option>DNS</option><option>mDNS</option>
+      <option>DHCP</option><option>NTP</option>
+      <option>SNMP</option><option>SSDP</option>
+      <option>LLMNR</option><option>NBNS</option>
+      <option>ARP</option>
+    </optgroup>
+    <optgroup label="Remote / Admin">
+      <option>SSH</option><option>RDP</option>
+      <option>Telnet</option><option>FTP</option>
+      <option>FTP-Data</option><option>VNC</option>
+      <option>SMB</option>
+    </optgroup>
+    <optgroup label="Database">
+      <option>MySQL</option><option>PgSQL</option>
+      <option>Mongo</option><option>Redis</option>
+      <option>MSSQL</option>
+    </optgroup>
+    <optgroup label="Tunnel / Routing">
+      <option>IKE</option><option>OSPF</option>
+      <option>TFTP</option><option>BGP</option>
+    </optgroup>
+    <optgroup label="Other"><option>OTHER</option></optgroup>
+  </select>
+
+  <select id="f-sev" class="lc-select" onchange="scheduleRefresh()">
+    <option value="">All Status</option>
+    <option value="NORMAL">Normal</option>
+    <option value="MEDIUM">Suspicious</option>
+    <option value="HIGH">Attack</option>
+  </select>
+
+  <select id="f-time" class="lc-select" onchange="scheduleRefresh()">
+    <option value="0">All Time</option>
+    <option value="60">Last 1 min</option>
+    <option value="300">Last 5 min</option>
+    <option value="3600">Last 1 hr</option>
+  </select>
+
+  <button id="btn-pause"  onclick="togglePause()"  class="lc-btn lc-btn-blue">⏸ Pause</button>
+  <button id="btn-scroll" onclick="toggleScroll()" class="lc-btn lc-btn-slate">⬇ Auto-scroll</button>
+  <button                 onclick="clearTable()"   class="lc-btn lc-btn-red">✕ Clear</button>
+
+  <!-- Stop Capture button (shows Save Session modal) -->
+  <button id="btn-stop-capture" onclick="stopCapture()"
+    class="lc-btn"
+    style="background:#1a0909;
+           border:1px solid rgba(239,68,68,.5);color:#fca5a5;margin-left:6px;">
+    &#9632; Stop &amp; Save
+  </button>
+</div>
+
+<!-- ══ SAVE SESSION MODAL ════════════════════════════════════════════════════ -->
+<div id="save-session-modal" style="
+  display:none;position:fixed;inset:0;z-index:9000;
+  background:rgba(0,0,0,.82);
+  align-items:center;justify-content:center;">
+  <div style="
+    background:#0f0f0f;
+    border:1px solid #1e1e1e;border-radius:12px;
+    padding:28px 32px;max-width:420px;width:100%;
+    box-shadow:0 8px 40px rgba(0,0,0,.6);">
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c8c4be" stroke-width="2">
+        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+      </svg>
+      <span style="font-size:15px;font-weight:700;color:#f0ede8;">Save Capture Session</span>
+    </div>
+
+    <div id="save-session-stats" style="
+      background:#0a0a0a;border:1px solid #1e1e1e;border-radius:8px;
+      padding:12px 16px;margin-bottom:16px;font-size:12px;font-family:var(--font-mono);
+      color:#8a8880;line-height:1.8;"></div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:12px;color:#8a8880;margin-bottom:8px;">Select download format:</div>
+      <div style="display:flex;gap:10px;">
+
+        <!-- Excel option -->
+        <label id="fmt-xls-lbl" onclick="selectFmt('xls')" style="
+          flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+          cursor:pointer;padding:12px 8px;border-radius:8px;
+          border:2px solid rgba(34,197,94,.6);
+          background:rgba(34,197,94,.1);transition:all .15s;">
+          <input type="radio" name="save-fmt" value="xls" checked style="display:none;" />
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M8 13l2 2 4-4" stroke="#22c55e" stroke-width="2"/>
+          </svg>
+          <span style="font-size:12px;font-weight:700;color:#22c55e;">Excel</span>
+          <span style="font-size:10px;color:#8a8880;">.xls — opens in Excel</span>
+        </label>
+
+        <!-- CSV option -->
+        <label id="fmt-csv-lbl" onclick="selectFmt('csv')" style="
+          flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+          cursor:pointer;padding:12px 8px;border-radius:8px;
+          border:2px solid #1e1e1e;
+          background:rgba(15,15,15,.5);transition:all .15s;">
+          <input type="radio" name="save-fmt" value="csv" style="display:none;" />
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8a8880" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
+          </svg>
+          <span style="font-size:12px;font-weight:700;color:#f0ede8;">CSV</span>
+          <span style="font-size:10px;color:#8a8880;">.csv — comma separated</span>
+        </label>
+
+        <!-- PDF option -->
+        <label id="fmt-pdf-lbl" onclick="selectFmt('pdf')" style="
+          flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+          cursor:pointer;padding:12px 8px;border-radius:8px;
+          border:2px solid #1e1e1e;
+          background:rgba(15,15,15,.5);transition:all .15s;">
+          <input type="radio" name="save-fmt" value="pdf" style="display:none;" />
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8a8880" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <text x="6" y="19" font-size="6" fill="#8a8880" stroke="none" font-family="monospace">PDF</text>
+          </svg>
+          <span style="font-size:12px;font-weight:700;color:#f0ede8;">PDF</span>
+          <span style="font-size:10px;color:#8a8880;">print / save as PDF</span>
+        </label>
+
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;padding-top:16px;border-top:1px solid #1e1e1e;">
+      <button onclick="resumeCapture()"
+        style="flex:1;background:rgba(138,136,128,.08);border:1px solid #1e1e1e;color:#8a8880;
+               padding:10px 0;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;
+               letter-spacing:.03em;transition:opacity .15s;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+        Resume
+      </button>
+      <button onclick="discardSession()"
+        style="flex:1;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+               padding:10px 0;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;
+               letter-spacing:.03em;transition:opacity .15s;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+        Discard
+      </button>
+      <button onclick="downloadSession()"
+        style="flex:1;background:rgba(200,196,190,.1);border:1px solid rgba(200,196,190,.3);color:#c8c4be;
+               padding:10px 0;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+               letter-spacing:.03em;transition:opacity .15s;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+        Download
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OLDER-PACKETS LOAD INDICATOR ═════════════════════════════════════════ -->
+<div id="older-load-indicator" style="display:none;text-align:center;padding:6px 14px;
+  margin-bottom:4px;background:#0a0a0a;border:1px solid #1e1e1e;border-radius:6px;
+  font-size:11px;color:#8a8880;font-family:var(--font-mono);letter-spacing:.04em;">
+  ↑ Loading older packets…
+</div>
+
+<!-- ══ PACKET TABLE ═════════════════════════════════════════════════════════ -->
+<div class="card" style="padding:0;overflow:hidden;margin-top:10px;">
+  <div id="lc-scroll" style="overflow-y:auto;max-height:calc(100vh - 310px);">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr class="lc-thead-row">
+          <th class="lc-th" style="width:36px;text-align:right;">#</th>
+          <th class="lc-th" style="width:78px;">Time</th>
+          <th class="lc-th" style="width:148px;">Source</th>
+          <th class="lc-th" style="width:148px;">Destination</th>
+          <th class="lc-th" style="width:68px;">Proto</th>
+          <th class="lc-th" style="width:80px;">Service</th>
+          <th class="lc-th" style="width:58px;">Country</th>
+          <th class="lc-th" style="width:72px;">Rate/5s</th>
+          <th class="lc-th" style="width:120px;">Confidence</th>
+          <th class="lc-th" style="width:100px;">Status</th>
+        </tr>
+      </thead>
+      <tbody id="lc-tbody">
+        <tr><td colspan="10" class="lc-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8a8880" stroke-width="1.5" style="margin-bottom:8px;">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <div>Waiting for packets…</div>
+          <div style="font-size:11px;margin-top:4px;color:#8a8880;">SOC engine is listening — packets appear as traffic is detected.</div>
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ FORENSIC DRAWER ══════════════════════════════════════════════════════ -->
+<div id="forensic-drawer" style="display:none;margin-top:12px;">
+  <div class="card" style="padding:0;overflow:hidden;">
+
+    <!-- Drawer header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+      padding:10px 16px;border-bottom:1px solid #1e1e1e;background:#0a0a0a;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c8c4be" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span style="font-size:12px;font-weight:600;color:#c8c4be;letter-spacing:.05em;">PACKET FORENSICS</span>
+        <span id="fd-severity-badge" class="lc-pill" style="font-size:9px;"></span>
+      </div>
+      <button onclick="closeDrawer()"
+        style="background:none;border:none;color:#8a8880;cursor:pointer;font-size:18px;line-height:1;
+        padding:0 4px;transition:color .15s;" onmouseover="this.style.color='#f0ede8'" onmouseout="this.style.color='#8a8880'">✕</button>
+    </div>
+
+    <!-- 3-column top section -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-bottom:1px solid #1e1e1e;">
+
+      <!-- Network Layer -->
+      <div style="padding:14px 16px;border-right:1px solid #1e1e1e;">
+        <div class="fd-section-title">Network Layer</div>
+        <div class="fd-row"><span class="fd-k">Source IP</span><span class="fd-v" id="fd-src"></span></div>
+        <div class="fd-row"><span class="fd-k">Src Port</span><span class="fd-v" id="fd-sport"></span></div>
+        <div class="fd-row"><span class="fd-k">Dest IP</span><span class="fd-v" id="fd-dst"></span></div>
+        <div class="fd-row"><span class="fd-k">Dst Port</span><span class="fd-v" id="fd-dport"></span></div>
+        <div class="fd-row"><span class="fd-k">MAC Address</span><span class="fd-v" id="fd-mac" style="font-size:10px;"></span></div>
+        <div class="fd-row"><span class="fd-k">Country</span><span class="fd-v" id="fd-country"></span></div>
+      </div>
+
+      <!-- Application Layer -->
+      <div style="padding:14px 16px;border-right:1px solid #1e1e1e;">
+        <div class="fd-section-title">Application Layer</div>
+        <div class="fd-row"><span class="fd-k">Protocol</span>
+          <span id="fd-proto-badge"></span></div>
+        <div class="fd-row"><span class="fd-k">Service</span><span class="fd-v" id="fd-service" style="font-weight:600;"></span></div>
+        <div class="fd-row"><span class="fd-k">Port Mapping</span><span class="fd-v" id="fd-portmap"></span></div>
+        <div class="fd-row"><span class="fd-k">Time</span><span class="fd-v" id="fd-time"></span></div>
+      </div>
+
+      <!-- Threat Analysis -->
+      <div style="padding:14px 16px;">
+        <div class="fd-section-title">Threat Analysis</div>
+        <div class="fd-row"><span class="fd-k">Severity</span><span class="fd-v" id="fd-sev"></span></div>
+        <div class="fd-row"><span class="fd-k">Confidence</span><span class="fd-v" id="fd-conf-txt"></span></div>
+        <!-- Animated risk bar -->
+        <div style="margin:8px 0 6px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:9px;color:#8a8880;text-transform:uppercase;letter-spacing:.05em;">Risk Level</span>
+            <span id="fd-risk-pct" style="font-size:9px;font-family:var(--font-mono);color:#8a8880;"></span>
+          </div>
+          <div style="height:6px;background:#1e1e1e;border-radius:99px;overflow:hidden;">
+            <div id="fd-risk-bar" style="height:100%;border-radius:99px;transition:width .5s ease,background .5s ease;width:0%;"></div>
+          </div>
+        </div>
+        <div class="fd-row"><span class="fd-k">Rate (5s)</span><span class="fd-v" id="fd-rate"></span></div>
+        <div class="fd-row"><span class="fd-k">Attack Type</span><span class="fd-v" id="fd-atype" style="color:#fbbf24;"></span></div>
+      </div>
+    </div>
+
+    <!-- TCP Flags row -->
+    <div id="fd-flags-section" style="padding:12px 16px;border-bottom:1px solid #1e1e1e;">
+      <div class="fd-section-title" style="margin-bottom:10px;">TCP Flags</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <div id="fd-flag-SYN" class="fd-flag">SYN</div>
+        <div id="fd-flag-ACK" class="fd-flag">ACK</div>
+        <div id="fd-flag-FIN" class="fd-flag">FIN</div>
+        <div id="fd-flag-RST" class="fd-flag">RST</div>
+        <div id="fd-flag-PSH" class="fd-flag">PSH</div>
+        <div id="fd-flag-URG" class="fd-flag">URG</div>
+        <div style="margin-left:4px;height:24px;width:1px;background:#1e1e1e;"></div>
+        <div id="fd-flag-interp" style="font-size:11px;color:#8a8880;font-style:italic;"></div>
+      </div>
+    </div>
+
+    <!-- Connection Interpretation -->
+    <div id="fd-interp-section" style="padding:12px 16px;">
+      <div class="fd-section-title" style="margin-bottom:8px;">Connection Interpretation</div>
+      <div id="fd-interp-text" style="font-size:12px;color:#8a8880;line-height:1.6;"></div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ── animations ────────────────────────────────────────────── */
+@keyframes ab-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.15); }
+  50%      { box-shadow: 0 0 16px 2px rgba(239,68,68,.25); }
+}
+@keyframes ab-dot {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+  70%     { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+/* ── stat bar ──────────────────────────────────────────────── */
+.lc-stat {
+  display:flex; flex-direction:column; gap:2px;
+  background:#0f0f0f; border:1px solid #1e1e1e; border-radius:8px;
+  padding:8px 16px; min-width:110px;
+}
+.lc-stat-green { border-color:rgba(74,222,128,.22);  background:rgba(74,222,128,.04); }
+.lc-stat-red   { border-color:rgba(248,113,113,.22); background:rgba(248,113,113,.04); }
+.lc-stat-yellow{ border-color:rgba(251,191,36,.22);  background:rgba(251,191,36,.04); }
+.lc-stat-blue  { border-color:#1e1e1e; background:#0f0f0f; }
+.lc-stat-lbl   { font-size:10px; color:#8a8880; text-transform:uppercase; letter-spacing:.05em; }
+.lc-stat-val   { font-size:20px; font-weight:700; font-family:var(--font-mono); color:#f0ede8; }
+
+/* ── toolbar ───────────────────────────────────────────────── */
+.lc-toolbar {
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  background:#0f0f0f; border:1px solid #1e1e1e; border-radius:8px;
+  padding:8px 12px;
+}
+.lc-search-wrap { position:relative; flex:1; min-width:200px; }
+.lc-search-icon {
+  position:absolute; left:9px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; color:#8a8880; pointer-events:none;
+}
+.lc-search {
+  width:100%; box-sizing:border-box;
+  background:#0a0a0a; border:1px solid #1e1e1e; color:#f0ede8;
+  padding:7px 10px 7px 30px; border-radius:6px; font-size:12px;
+  font-family:var(--font-mono); outline:none; transition:border-color .15s;
+}
+.lc-search:focus { border-color:#c8c4be; }
+.lc-select {
+  background:#0a0a0a; border:1px solid #1e1e1e; color:#8a8880;
+  padding:7px 10px; border-radius:6px; font-size:12px; outline:none;
+  cursor:pointer; transition:border-color .15s;
+}
+.lc-select:focus { border-color:#c8c4be; }
+.lc-btn {
+  padding:7px 14px; border-radius:6px; font-size:12px;
+  font-family:var(--font-mono); cursor:pointer; border:1px solid;
+  white-space:nowrap; transition:opacity .15s;
+}
+.lc-btn:hover { opacity:.8; }
+.lc-btn-blue  { background:rgba(200,196,190,.08); color:#c8c4be; border-color:rgba(200,196,190,.25); }
+.lc-btn-slate { background:rgba(138,136,128,.08); color:#8a8880; border-color:rgba(138,136,128,.25); }
+.lc-btn-red   { background:rgba(248,113,113,.10); color:#f87171; border-color:rgba(248,113,113,.35); }
+
+/* ── table header ──────────────────────────────────────────── */
+.lc-thead-row { background:#080808; }
+.lc-th {
+  padding:9px 10px; text-align:left; font-size:10px; font-weight:600;
+  color:#3a3836; text-transform:uppercase; letter-spacing:.06em;
+  white-space:nowrap; border-bottom:1px solid #1e1e1e;
+  position:sticky; top:0; background:#080808; z-index:5;
+}
+
+/* ── table rows ────────────────────────────────────────────── */
+.lc-row td {
+  padding:6px 10px; border-bottom:1px solid #141414;
+  white-space:nowrap; transition:background .15s;
+}
+.lc-row:hover td { background:rgba(200,196,190,.04) !important; cursor:pointer; }
+.lc-row.selected td { background:rgba(200,196,190,.08) !important; }
+.lc-row-attack     td { background:rgba(239,68,68,.05); }
+.lc-row-attack:hover td { border-left:2px solid #ef4444; }
+.lc-row-suspicious td { background:rgba(234,179,8,.04); }
+
+/* ── empty state ───────────────────────────────────────────── */
+.lc-empty {
+  padding:44px 20px; text-align:center; color:#8a8880;
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+}
+
+/* ── pills ─────────────────────────────────────────────────── */
+.lc-pill {
+  display:inline-block; padding:2px 8px; border-radius:4px;
+  font-size:10px; font-weight:700; font-family:var(--font-mono); letter-spacing:.04em;
+}
+.lc-pill-normal  { background:rgba(34,197,94,.12);  color:#4ade80;  border:1px solid rgba(34,197,94,.3); }
+.lc-pill-medium  { background:rgba(234,179,8,.12);  color:#fbbf24;  border:1px solid rgba(234,179,8,.3); }
+.lc-pill-high    { background:rgba(239,68,68,.12);  color:#f87171;  border:1px solid rgba(239,68,68,.3); }
+
+/* ── confidence bar ────────────────────────────────────────── */
+.lc-conf-wrap { width:66px; height:5px; background:#1e1e1e; border-radius:99px; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:4px; }
+.lc-conf-fill { height:100%; border-radius:99px; transition:width .4s ease; }
+
+/* ── proto badge ───────────────────────────────────────────── */
+.lc-proto {
+  display:inline-block; padding:2px 6px; border-radius:3px;
+  font-size:10px; font-weight:700; font-family:var(--font-mono);
+}
+
+/* ── forensic drawer ───────────────────────────────────────── */
+.fd-section-title {
+  font-size:9px; font-weight:700; color:#c8c4be; text-transform:uppercase;
+  letter-spacing:.1em; margin-bottom:8px; padding-bottom:6px;
+  border-bottom:1px solid #1e1e1e;
+}
+.fd-row {
+  display:flex; justify-content:space-between; align-items:baseline;
+  padding:3px 0; border-bottom:1px solid #141414;
+}
+.fd-row:last-child { border-bottom:none; }
+.fd-k { font-size:10px; color:#8a8880; flex-shrink:0; }
+.fd-v { font-size:11px; color:#f0ede8; font-family:var(--font-mono); text-align:right; max-width:55%; word-break:break-all; }
+
+/* ── TCP flag chips ────────────────────────────────────────── */
+.fd-flag {
+  padding:3px 10px; border-radius:4px; font-size:10px;
+  font-weight:700; font-family:var(--font-mono); letter-spacing:.06em;
+  background:#0f0f0f; border:1px solid #1e1e1e; color:#3a3836;
+  transition:all .2s ease;
+}
+.fd-flag.active {
+  background:rgba(200,196,190,.12); border-color:rgba(200,196,190,.4);
+  color:#c8c4be; box-shadow:0 0 8px rgba(200,196,190,.08);
+}
+.fd-flag.active.flag-danger {
+  background:rgba(239,68,68,.18); border-color:rgba(239,68,68,.6);
+  color:#f87171; box-shadow:0 0 8px rgba(239,68,68,.2);
+}
+.fd-flag.active.flag-warn {
+  background:rgba(234,179,8,.18); border-color:rgba(234,179,8,.6);
+  color:#fbbf24; box-shadow:0 0 8px rgba(234,179,8,.2);
+}
+</style>
+
+<script>
+// ══ CONFIG ══════════════════════════════════════════════════════════════════
+const POLL_MS      = 800;
+const RENDER_CHUNK = 80;     // rows per RAF tick (initial render only)
+const DOM_WIN      = 400;    // max rows to keep rendered in DOM at once
+const SCROLL_STEP  = 150;    // rows to shift virtual window per scroll trigger
+const SESSION_KEY  = 'soc_lc_seq'; // sessionStorage key for page-refresh continuity
+
+// ── Protocol colors ─────────────────────────────────────────────────────────
+const PROTO_CLR = {
+  TCP:'#c8c4be',    UDP:'#a78bfa',    HTTP:'#22c55e',   HTTPS:'#16a34a',
+  DNS:'#f97316',    SSH:'#ef4444',    RDP:'#dc2626',    FTP:'#fb7185',
+  SMTP:'#c084fc',   SMTPS:'#a855f7',  IMAP:'#c084fc',   IMAPS:'#a855f7',
+  POP3:'#c084fc',   POP3S:'#a855f7',  DHCP:'#ec4899',   mDNS:'#fb923c',
+  NTP:'#a78bfa',    SNMP:'#c084fc',   SSDP:'#8a8880',   LLMNR:'#8a8880',
+  NBNS:'#8a8880',   ARP:'#f59e0b',    ICMP:'#06b6d4',   IGMP:'#10b981',
+  SMB:'#f43f5e',    Telnet:'#f43f5e', VNC:'#fb7185',    MySQL:'#c084fc',
+  Redis:'#c084fc',  Mongo:'#c084fc',  OSPF:'#fb923c',   GRE:'#fb923c',
+  TFTP:'#a78bfa',   IKE:'#a78bfa',   OTHER:'#8a8880',
+};
+
+// ── Port → Service Name ─────────────────────────────────────────────────────
+const SVC_MAP = {
+  20:'FTP-DATA',   21:'FTP',        22:'SSH',          23:'TELNET',
+  25:'SMTP',       53:'DNS',        67:'DHCP',          68:'DHCP',
+  69:'TFTP',       80:'HTTP',       88:'KERBEROS',     110:'POP3',
+  111:'RPC',      123:'NTP',       135:'MSRPC',        137:'NETBIOS-NS',
+  138:'NETBIOS-DGM',139:'NETBIOS-SSN',143:'IMAP',      161:'SNMP',
+  162:'SNMP-TRAP',179:'BGP',       389:'LDAP',         443:'HTTPS',
+  445:'SMB',      465:'SMTPS',     514:'SYSLOG',       515:'LPD',
+  520:'RIP',      587:'SMTP-SUBMISSION',631:'IPP',     636:'LDAPS',
+  873:'RSYNC',    989:'FTPS-DATA', 990:'FTPS',         993:'IMAPS',
+  995:'POP3S',   1080:'SOCKS',    1194:'OPENVPN',     1433:'MSSQL',
+ 1521:'ORACLE',  1701:'L2TP',     1723:'PPTP',        1812:'RADIUS',
+ 1883:'MQTT',    1900:'SSDP',     2049:'NFS',         2082:'CPANEL',
+ 2083:'CPANEL-SSL',3306:'MYSQL',  3389:'RDP',         3690:'SVN',
+ 4369:'EPMD',    4500:'IKE',      5060:'SIP',         5061:'SIPS',
+ 5353:'MDNS',    5355:'LLMNR',    5432:'POSTGRESQL',  5672:'RABBITMQ',
+ 5900:'VNC',     5985:'WINRM',    5986:'WINRM-HTTPS', 6379:'REDIS',
+ 6667:'IRC',     8080:'HTTP-ALT', 8443:'HTTPS-ALT',   8888:'HTTP-PROXY',
+ 9000:'SONARQUBE',9092:'KAFKA',   9200:'ELASTICSEARCH',11211:'MEMCACHED',
+27017:'MONGODB',
+};
+
+function svcName(port) { return SVC_MAP[+port] || (port ? `Port ${port}` : '--'); }
+
+// ── TCP flag definitions ─────────────────────────────────────────────────────
+const FLAGS = {SYN:0x02, ACK:0x10, FIN:0x01, RST:0x04, PSH:0x08, URG:0x20};
+
+// ══ STATE ════════════════════════════════════════════════════════════════════
+let paused        = false;
+let autoScroll    = true;
+let lastSeqId     = -1;
+let selectedRow   = null;
+let ppsCount      = 0;
+let rowSerial     = 0;
+let stats         = { total:0, attacks:0, suspicious:0, shown:0 };
+let filterTimer   = null;
+let _underAttack  = false;
+
+const _store      = [];        // ALL packets this session, chronological (never trimmed)
+const _pktCache   = new Map(); // seq_id → packet object; for forensic drawer
+let _winStart     = 0;         // _store index of first DOM-rendered row
+let _isLoadingOlder  = false;
+let _noMoreOlder     = false;
+let _initialLoadDone = false;
+let _scrollDebounce  = null;
+let _suppressScroll  = false;  // blocks scroll handler during intentional DOM clears
+
+// ── Restore last position from previous page load ────────────────────────────
+{
+  const _saved = sessionStorage.getItem(SESSION_KEY);
+  if (_saved !== null) { const n = parseInt(_saved, 10); if (n > 0) lastSeqId = n; }
+}
+window.addEventListener('beforeunload', () => {
+  if (lastSeqId > 0) sessionStorage.setItem(SESSION_KEY, lastSeqId);
+});
+
+// ══ HELPERS ══════════════════════════════════════════════════════════════════
+
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+function sevClass(sev) {
+  if (!sev || sev === 'NORMAL') return 'lc-pill-normal';
+  if (sev === 'HIGH')           return 'lc-pill-high';
+  return 'lc-pill-medium';
+}
+function sevLabel(sev) {
+  if (!sev || sev === 'NORMAL') return 'NORMAL';
+  if (sev === 'HIGH')           return 'ATTACK';
+  return 'SUSPICIOUS';
+}
+function sevRowClass(sev) {
+  if (sev === 'HIGH')   return 'lc-row-attack';
+  if (sev === 'MEDIUM') return 'lc-row-suspicious';
+  return '';
+}
+// For SUSPICIOUS/ATTACK: color by backend confidence value.
+// For NORMAL: always green (bar is an activity indicator, not a threat score).
+function confColor(c, sev) {
+  if (!sev || sev === 'NORMAL') return '#22c55e';
+  if (c >= 70) return '#ef4444';
+  if (c >= 40) return '#f97316';
+  if (c >= 15) return '#eab308';
+  return '#22c55e';
+}
+// For NORMAL packets the backend returns confidence=0.
+// Use a log scale so rate=1 → ~11%, rate=10 → ~25%, rate=100 → ~44%, rate=2400 → 70%.
+// This gives each packet a distinct visible value instead of always showing 3%.
+function displayConf(p) {
+  const c = p.confidence || 0;
+  if (c > 0) return c;
+  const rate = p.rate || 0;
+  if (rate <= 0) return 5;
+  return Math.min(70, Math.max(5, Math.round(Math.log(rate + 1) / Math.log(2401) * 65) + 5));
+}
+function protoColor(p) { return PROTO_CLR[p] || '#8a8880'; }
+
+// ── Guess attack type from rate + proto (display only) ──────────────────────
+function guessAttackType(p) {
+  const rate = p.rate || 0;
+  const flags = p.tcp_flags || 0;
+  const isSyn = !!(flags & 0x02), isAck = !!(flags & 0x10);
+  if (rate > 5900) {
+    if (isSyn && !isAck) return 'SYN Flood';
+    if (p.proto === 'UDP' || p.proto === 'DNS') return 'UDP/DNS Flood';
+    return 'Traffic Flood';
+  }
+  if (rate > 2400) {
+    if (isSyn && !isAck) return 'SYN Flood Pattern';
+    return 'Packet Surge';
+  }
+  return '--';
+}
+
+// ── Build one table row ──────────────────────────────────────────────────────
+function rowHtml(p) {
+  const sev  = p.severity || 'NORMAL';
+  const conf = displayConf(p);
+  const cc   = confColor(conf, sev);
+  const pc   = protoColor(p.proto);
+  const svc  = svcName(p.port);
+  const src  = p.src_port ? `${p.src||'?'}:${p.src_port}` : (p.src || '?');
+  const dst  = p.port     ? `${p.dst||'?'}:${p.port}`     : (p.dst || '?');
+
+  const serial = (p.seq_id > 0) ? p.seq_id : (p._serial || ++rowSerial);
+  _pktCache.set(serial, p);
+
+  // Outbound packets are responses from this host (e.g. TCP RST replies to a
+  // port scan). Dim the source IP and show a tiny "→ out" badge so they are
+  // clearly distinguished from inbound attacks.
+  const srcStyle = p.outbound
+    ? 'color:#3a3836;font-family:var(--font-mono);font-size:11px;'
+    : 'color:#f0ede8;font-family:var(--font-mono);font-size:11px;';
+  const outTag = p.outbound
+    ? '<span style="margin-left:4px;font-size:8px;padding:1px 4px;border-radius:3px;background:rgba(100,116,139,.2);color:#64748b;font-weight:700;vertical-align:middle;">OUT</span>'
+    : '';
+
+  return `<tr class="lc-row ${sevRowClass(sev)}" data-epoch="${p.epoch||0}" data-sev="${sev}" data-serial="${serial}"
+    title="Click to inspect this packet"
+    onclick="openDrawer(${serial})">
+    <td style="color:#3a3836;font-family:var(--font-mono);font-size:10px;text-align:right;padding-right:6px;">${serial}</td>
+    <td style="color:#8a8880;font-family:var(--font-mono);font-size:11px;">${esc(p.time||'--')}</td>
+    <td style="${srcStyle}">${esc(src)}${outTag}</td>
+    <td style="color:#8a8880;font-family:var(--font-mono);font-size:11px;">${esc(dst)}</td>
+    <td><span class="lc-proto" style="background:${pc}22;color:${pc};border:1px solid ${pc}44;">${esc(p.proto||'?')}</span></td>
+    <td style="color:#8a8880;font-size:11px;">${esc(svc)}</td>
+    <td style="font-size:10px;color:#8a8880;">${esc(p.country||'--')}</td>
+    <td style="font-family:var(--font-mono);color:${conf>=70?'#f87171':conf>=40?'#f97316':'#8a8880'};font-size:11px;">
+      ${p.rate||0}<span style="font-size:9px;color:#3a3836;margin-left:1px;">pkt</span>
+    </td>
+    <td>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <div class="lc-conf-wrap"><div class="lc-conf-fill" style="width:${conf}%;background:${cc};"></div></div>
+        <span style="font-size:10px;color:${cc};font-family:var(--font-mono);">${conf}%</span>
+      </div>
+    </td>
+    <td><span class="lc-pill ${sevClass(sev)}">${sevLabel(sev)}</span></td>
+  </tr>`;
+}
+
+// ══ FORENSIC DRAWER ══════════════════════════════════════════════════════════
+
+function openDrawer(arg) {
+  // arg is either a serial number (from onclick) or a packet object (legacy calls)
+  const p = typeof arg === 'number' ? _pktCache.get(arg) : arg;
+  if (!p) return;
+
+  if (selectedRow) selectedRow.classList.remove('selected');
+  selectedRow = event.currentTarget;
+  if (selectedRow) selectedRow.classList.add('selected');
+
+  const sev  = p.severity || 'NORMAL';
+  const conf = displayConf(p);
+  const cc   = confColor(conf, sev);
+  const svc  = svcName(p.port);
+  const flags= p.tcp_flags || 0;
+  const isTCP= !!(flags) || (p.proto === 'TCP' || p.proto === 'HTTP' ||
+    p.proto === 'HTTPS' || p.proto === 'SSH' || p.proto === 'RDP' ||
+    p.proto === 'FTP' || p.proto === 'SMB' || p.proto === 'SMTP' ||
+    p.proto === 'SMTPS' || p.proto === 'IMAP' || p.proto === 'IMAPS' ||
+    p.proto === 'Telnet' || p.proto === 'VNC' || p.proto === 'MySQL');
+
+  // Header badge
+  const badge = document.getElementById('fd-severity-badge');
+  badge.className = 'lc-pill ' + sevClass(sev);
+  badge.textContent = sevLabel(sev);
+
+  // Network layer
+  document.getElementById('fd-src').textContent   = p.src     || '--';
+  document.getElementById('fd-sport').textContent  = p.src_port|| '--';
+  document.getElementById('fd-dst').textContent    = p.dst     || '--';
+  document.getElementById('fd-dport').textContent  = p.port    || '--';
+  document.getElementById('fd-mac').textContent    = p.src_mac || '--';
+  document.getElementById('fd-country').textContent= p.country || '--';
+
+  // Application layer
+  const pc = protoColor(p.proto);
+  document.getElementById('fd-proto-badge').innerHTML =
+    `<span class="lc-proto" style="background:${pc}22;color:${pc};border:1px solid ${pc}44;">${esc(p.proto||'?')}</span>`;
+  document.getElementById('fd-service').textContent  = svc;
+  document.getElementById('fd-portmap').textContent  =
+    p.proto ? `${p.proto} → Port ${p.port||'?'} → ${svc}` : '--';
+  document.getElementById('fd-time').textContent     = p.time || '--';
+
+  // Threat analysis
+  document.getElementById('fd-sev').innerHTML =
+    `<span class="lc-pill ${sevClass(sev)}" style="font-size:9px;">${sevLabel(sev)}</span>`;
+  document.getElementById('fd-conf-txt').textContent = conf + '%';
+  document.getElementById('fd-risk-pct').textContent  = conf + '%';
+  const bar = document.getElementById('fd-risk-bar');
+  bar.style.width      = conf + '%';
+  bar.style.background = cc;
+  document.getElementById('fd-rate').textContent  = (p.rate || 0) + ' pkts / 5s';
+  document.getElementById('fd-atype').textContent = guessAttackType(p);
+
+  // TCP Flags
+  const flagNames = ['SYN','ACK','FIN','RST','PSH','URG'];
+  flagNames.forEach(name => {
+    const el = document.getElementById('fd-flag-' + name);
+    const bit = FLAGS[name];
+    const active = !!(flags & bit);
+    el.className = 'fd-flag' + (active ? ' active' : '');
+    if (active) {
+      if (name === 'RST') el.classList.add('flag-danger');
+      else if (name === 'SYN' && !(flags & FLAGS.ACK)) el.classList.add('flag-warn');
+    }
+  });
+
+  const syn = !!(flags & FLAGS.SYN), ack = !!(flags & FLAGS.ACK),
+        fin = !!(flags & FLAGS.FIN), rst = !!(flags & FLAGS.RST);
+  let flagInterp = '';
+  if (!isTCP || !flags) {
+    flagInterp = 'Not a TCP packet — flags not applicable';
+  } else if (syn && !ack) {
+    flagInterp = p.rate > 5900 ? 'SYN flood pattern — high-rate SYN without ACK' : 'New connection attempt (SYN only)';
+  } else if (syn && ack) { flagInterp = 'Handshake response (SYN-ACK)';
+  } else if (ack && !syn && !fin && !rst) { flagInterp = 'Established session — data transfer (ACK)';
+  } else if (fin) { flagInterp = 'Connection teardown (FIN) — session closing';
+  } else if (rst) { flagInterp = 'Abnormal reset (RST) — possible port scan or intrusion attempt';
+  } else { flagInterp = 'Mixed flags — inspect payload'; }
+  document.getElementById('fd-flag-interp').textContent = flagInterp;
+
+  // Show/hide TCP section
+  document.getElementById('fd-flags-section').style.display = isTCP ? 'block' : 'none';
+
+  // Connection interpretation
+  let interp = '';
+  if (sev === 'HIGH') {
+    const atype = guessAttackType(p);
+    interp = `<span style="color:#f87171;font-weight:600;">ATTACK — ${atype}</span><br>`;
+    if (atype.includes('SYN')) {
+      interp += 'High-volume SYN packets without completing handshakes. '
+        + 'This pattern indicates a SYN flood attack — the attacker is exhausting '
+        + 'server connection state tables by never sending the final ACK.';
+    } else if (atype.includes('UDP') || atype.includes('DNS')) {
+      interp += 'High-rate UDP or DNS traffic. Attacker may be amplifying traffic '
+        + 'through DNS reflection or directly flooding the target with UDP datagrams.';
+    } else {
+      interp += `Packet rate exceeds ATTACK threshold (${p.rate} pkts/5s). `
+        + 'Traffic volume is consistent with a flood-type denial-of-service attack.';
+    }
+  } else if (sev === 'MEDIUM') {
+    interp = `<span style="color:#fbbf24;font-weight:600;">SUSPICIOUS — Elevated traffic rate</span><br>`;
+    interp += `Rate ${p.rate} pkts/5s exceeds normal baseline. `;
+    if (syn && !ack) interp += 'SYN-only pattern detected — possible port scan or early flood. ';
+    interp += 'Monitor for escalation. Behavioral analysis is active.';
+  } else {
+    interp = `<span style="color:#4ade80;font-weight:600;">NORMAL — Baseline traffic</span><br>`;
+    if (svc !== '--') interp += `Standard ${svc} connection. `;
+    if (syn && ack) interp += 'Normal TCP handshake in progress. ';
+    else if (ack && !syn) interp += 'Active established session. ';
+    else if (fin) interp += 'Session closing normally. ';
+    interp += 'No anomalies detected by detection engine.';
+  }
+  document.getElementById('fd-interp-text').innerHTML = interp;
+
+  document.getElementById('forensic-drawer').style.display = 'block';
+  document.getElementById('forensic-drawer').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function closeDrawer() {
+  document.getElementById('forensic-drawer').style.display = 'none';
+  if (selectedRow) { selectedRow.classList.remove('selected'); selectedRow = null; }
+}
+
+// ══ ATTACK BANNER ════════════════════════════════════════════════════════════
+
+function updateAttackBanner() {
+  const attacks = document.querySelectorAll('.lc-row-attack');
+  const banner  = document.getElementById('attack-banner');
+  if (!_underAttack) {
+    // Backend says attack resolved — hide banner even if old attack rows remain.
+    banner.style.display = 'none';
+    return;
+  }
+  if (attacks.length > 0) {
+    banner.style.display = 'flex';
+    document.getElementById('ab-count').textContent = attacks.length + ' ATTACK' + (attacks.length > 1 ? 'S' : '');
+    const row   = attacks[attacks.length - 1];
+    const cells = row.querySelectorAll('td');
+    if (cells.length >= 4) {
+      document.getElementById('ab-detail').textContent =
+        `Source: ${cells[2]?.textContent||''}  |  Service: ${cells[5]?.textContent||''}`;
+    }
+  }
+}
+
+// ══ CONTROLS ══════════════════════════════════════════════════════════════════
+
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+  btn.style.color = paused ? '#4ade80' : '';
+}
+function toggleScroll() {
+  autoScroll = !autoScroll;
+  const btn = document.getElementById('btn-scroll');
+  btn.textContent = autoScroll ? '⬇ Auto-scroll' : '— Scrolling off';
+  btn.style.opacity = autoScroll ? '1' : '.5';
+}
+function clearTable() {
+  _store.length = 0;
+  _pktCache.clear();
+  _winStart = 0;
+  _isLoadingOlder = false; _noMoreOlder = false; _initialLoadDone = false;
+
+  // Suppress scroll events while we replace innerHTML — the scrollHeight collapse
+  // auto-resets scrollTop to 0, firing a spurious scroll that would toggle autoScroll off.
+  _suppressScroll = true;
+  document.getElementById('lc-tbody').innerHTML =
+    `<tr><td colspan="10" class="lc-empty"><div>Cleared — waiting for packets…</div></td></tr>`;
+  requestAnimationFrame(() => { _suppressScroll = false; });
+
+  lastSeqId = -1; rowSerial = 0;
+  sessionStorage.removeItem(SESSION_KEY);
+  stats = { total:0, attacks:0, suspicious:0, shown:0 };
+  updateStatBar();
+  closeDrawer();
+  document.getElementById('attack-banner').style.display = 'none';
+
+  // Always restore auto-scroll after a clear so live packets scroll into view.
+  autoScroll = true;
+  const scrollBtn = document.getElementById('btn-scroll');
+  if (scrollBtn) { scrollBtn.textContent = '⬇ Auto-scroll'; scrollBtn.style.opacity = '1'; }
+}
+function _resetDisplay(msg) {
+  document.getElementById('lc-tbody').innerHTML =
+    `<tr><td colspan="10" class="lc-empty"><div>${esc(msg)}</div></td></tr>`;
+  rowSerial = 0; stats.shown = 0;
+  updateStatBar();
+  closeDrawer();
+}
+function scheduleRefresh() {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => {
+    _store.length = 0;
+    _pktCache.clear();
+    _winStart = 0;
+    _isLoadingOlder = false; _noMoreOlder = false; _initialLoadDone = false;
+    lastSeqId = -1;
+    _resetDisplay('Filtering…');
+    poll();
+  }, 300);
+}
+
+// ══ STAT BAR ═════════════════════════════════════════════════════════════════
+
+function updateStatBar() {
+  document.getElementById('sv-total').textContent      = stats.total;
+  document.getElementById('sv-shown').textContent      = stats.shown;
+  document.getElementById('sv-attacks').textContent    = stats.attacks;
+  document.getElementById('sv-suspicious').textContent = stats.suspicious;
+}
+
+// ══ VIRTUAL WINDOW RENDERER ═══════════════════════════════════════════════════
+// Renders _store[_winStart .. _winStart + DOM_WIN] into tbody.
+// Keeps DOM bounded to DOM_WIN rows no matter how many packets are in _store.
+
+function rerenderWindow() {
+  const tbody = document.getElementById('lc-tbody');
+  const slice = _store.slice(_winStart, _winStart + DOM_WIN);
+  if (slice.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="lc-empty"><div>Waiting for packets…</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = slice.map(rowHtml).join('');
+  updateAttackBanner();
+  stats.shown = _store.length;
+  updateStatBar();
+}
+
+// ══ LIVE PACKET INTAKE ════════════════════════════════════════════════════════
+// Called by poll() with newly arrived packets. Appends to _store and updates
+// the DOM window. During auto-scroll the window tracks the end of _store;
+// when the user has scrolled up the window doesn't move (data accumulates silently).
+
+function _addLivePackets(newPkts) {
+  _store.push(...newPkts);
+  newPkts.forEach(p => { _pktCache.set(p.seq_id > 0 ? p.seq_id : ++rowSerial, p); });
+
+  stats.shown = _store.length;
+  updateStatBar();
+
+  if (!autoScroll) return; // user is browsing history — don't disrupt the view
+
+  const newWinStart = Math.max(0, _store.length - DOM_WIN);
+  const tbody = document.getElementById('lc-tbody');
+
+  if (newPkts.length <= RENDER_CHUNK && newWinStart === _winStart) {
+    // Small batch fits in current window — append rows without a full re-render
+    if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+    tbody.insertAdjacentHTML('beforeend', newPkts.map(rowHtml).join(''));
+    updateAttackBanner();
+  } else {
+    // Large flood burst or window needs to advance — full re-render (bounded at DOM_WIN rows)
+    _winStart = newWinStart;
+    rerenderWindow();
+  }
+
+  const el = document.getElementById('lc-scroll');
+  if (document.getElementById('forensic-drawer').style.display === 'none') {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// ══ POLL ═════════════════════════════════════════════════════════════════════
+
+async function poll() {
+  if (paused) return;
+
+  const search = document.getElementById('f-search').value.trim();
+  const proto  = document.getElementById('f-proto').value;
+  const sev    = document.getElementById('f-sev').value;
+  const secs   = document.getElementById('f-time').value;
+
+  const params = new URLSearchParams({
+    since_id: lastSeqId, limit: 2000,
+    filter: search, proto, sev,
+  });
+
+  try {
+    const res = await fetch(`/api/capture/soc?${params}`, { cache:'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+
+    if (!d.packets || d.packets.length === 0) {
+      if (d.total_seen) { stats.total = d.total_seen; updateStatBar(); }
+      const tbody = document.getElementById('lc-tbody');
+      if (tbody.querySelector('td[colspan]')) {
+        const hasFilter = search || proto || sev;
+        if (hasFilter) _resetDisplay('No packets match the current filter — waiting for matching traffic…');
+        else if (tbody.querySelector('td[colspan]').textContent.includes('Filtering')) _resetDisplay('Waiting for packets…');
+      }
+      return;
+    }
+
+    let pkts = d.packets;
+    const secsN = parseInt(secs, 10);
+    if (secsN > 0) {
+      const cutoff = (Date.now() / 1000) - secsN;
+      pkts = pkts.filter(p => (p.epoch || 0) >= cutoff);
+    }
+    if (pkts.length === 0) {
+      const tbody = document.getElementById('lc-tbody');
+      if (tbody.querySelector('td[colspan]')) _resetDisplay('No packets match the current filter…');
+      return;
+    }
+
+    _underAttack = Boolean(d.under_attack);
+
+    // Advance the incremental cursor; persist it for page-refresh continuity.
+    const lastPkt = pkts[pkts.length - 1];
+    if ((lastPkt.seq_id || 0) > lastSeqId) lastSeqId = lastPkt.seq_id;
+    if (lastSeqId > 0) sessionStorage.setItem(SESSION_KEY, lastSeqId);
+
+    stats.total      = d.total_seen || stats.total;
+    stats.attacks    += pkts.filter(p => p.severity === 'HIGH').length;
+    stats.suspicious += pkts.filter(p => p.severity === 'MEDIUM').length;
+    ppsCount         += pkts.length;
+
+    if (!_initialLoadDone) {
+      // ── Initial render: push to store, set window, jump to bottom ──────────
+      _store.push(...pkts);
+      pkts.forEach(p => _pktCache.set(p.seq_id > 0 ? p.seq_id : ++rowSerial, p));
+      _winStart = Math.max(0, _store.length - DOM_WIN);
+      rerenderWindow();
+      document.getElementById('lc-scroll').scrollTop = 1e9;
+      _initialLoadDone = true;
+    } else {
+      // ── Incremental live update via virtual window ──────────────────────────
+      _addLivePackets(pkts);
+    }
+  } catch(e) { /* silent — network blips are normal */ }
+}
+
+// ══ PPS TICK ═════════════════════════════════════════════════════════════════
+setInterval(() => {
+  document.getElementById('sv-pps').textContent = ppsCount;
+  ppsCount = 0;
+}, 1000);
+
+// ══ SCROLL-UP BACKWARD LOADER ════════════════════════════════════════════════
+// Fetches packets older than _store[0] from the backend when the user has
+// scrolled past the beginning of the in-memory store.
+
+async function loadOlderPackets() {
+  const oldestId = _store.length > 0 ? (_store[0].seq_id || 0) : 0;
+  if (!_initialLoadDone || _isLoadingOlder || _noMoreOlder || !oldestId) return;
+  _isLoadingOlder = true;
+
+  const ind = document.getElementById('older-load-indicator');
+  if (ind) { ind.textContent = '↑ Loading older packets…'; ind.style.display = 'block'; }
+
+  const search = document.getElementById('f-search').value.trim();
+  const proto  = document.getElementById('f-proto').value;
+  const sev    = document.getElementById('f-sev').value;
+  const params = new URLSearchParams({
+    before_id: oldestId, limit: 200, filter: search, proto, sev,
+  });
+
+  try {
+    const res = await fetch(`/api/capture/soc?${params}`, { cache: 'no-store' });
+    if (!res.ok) { _isLoadingOlder = false; if (ind) ind.style.display = 'none'; return; }
+    const d = await res.json();
+
+    if (!d.packets || d.packets.length === 0) {
+      _noMoreOlder = true;
+      if (ind) {
+        ind.textContent = '— Beginning of captured history —';
+        setTimeout(() => { ind.style.display = 'none'; }, 2500);
+      }
+      _isLoadingOlder = false;
+      return;
+    }
+
+    // Prepend to store; shift window start to keep current rows in view.
+    _store.unshift(...d.packets);
+    d.packets.forEach(p => _pktCache.set(p.seq_id > 0 ? p.seq_id : ++rowSerial, p));
+    _winStart = Math.min(_winStart + d.packets.length, Math.max(0, _store.length - DOM_WIN));
+
+    // Re-render and compensate scroll position.
+    const scrollEl = document.getElementById('lc-scroll');
+    const prevH   = scrollEl.scrollHeight;
+    const prevTop = scrollEl.scrollTop;
+    rerenderWindow();
+    scrollEl.scrollTop = prevTop + (scrollEl.scrollHeight - prevH);
+
+  } catch(e) { /* silent */ }
+
+  if (ind) ind.style.display = 'none';
+  _isLoadingOlder = false;
+}
+
+// ══ BOOT ═════════════════════════════════════════════════════════════════════
+
+document.getElementById('lc-scroll').addEventListener('scroll', function() {
+  if (_suppressScroll) return;   // ignore scroll events caused by DOM clears
+  clearTimeout(_scrollDebounce);
+  _scrollDebounce = setTimeout(() => {
+    if (_suppressScroll) return;  // guard again inside the debounce
+    const el = this;
+
+    // ── Near top: load older content ──────────────────────────────────────────
+    if (el.scrollTop < 100) {
+      if (_winStart > 0) {
+        // Shift virtual window up through in-memory store (no network call).
+        const prevH   = el.scrollHeight;
+        const prevTop = el.scrollTop;
+        _winStart = Math.max(0, _winStart - SCROLL_STEP);
+        rerenderWindow();
+        // Push scrollTop down so the same row stays on screen after the prepend.
+        el.scrollTop = prevTop + (el.scrollHeight - prevH);
+        if (autoScroll) toggleScroll();
+      } else {
+        // Past beginning of memory — fetch older history from backend.
+        loadOlderPackets();
+        if (autoScroll) toggleScroll();
+      }
+    }
+
+    // ── Near bottom: advance window to live end if user scrolled back down ────
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+      const maxWinStart = Math.max(0, _store.length - DOM_WIN);
+      if (_winStart < maxWinStart) {
+        const prevH   = el.scrollHeight;
+        const prevTop = el.scrollTop;
+        _winStart = maxWinStart;
+        rerenderWindow();
+        el.scrollTop = prevTop - (prevH - el.scrollHeight);
+      }
+    }
+  }, 50);
+});
+
+poll();
+setInterval(poll, POLL_MS);
+
+// ══ STOP / SAVE SESSION ═════════════════════════════════════════════════════
+let _captureStopped = false;
+
+function stopCapture() {
+  _captureStopped = true;
+  paused = true;
+  const btn = document.getElementById('btn-pause');
+  if (btn) btn.textContent = '▶ Resume';
+
+  // Show stats in modal
+  document.getElementById('save-session-stats').innerHTML =
+    `Packets captured: <strong style="color:#f0ede8">${_store.length}</strong><br>` +
+    `Attacks: <strong style="color:#f87171">${stats.attacks}</strong>  ` +
+    `Suspicious: <strong style="color:#f97316">${stats.suspicious}</strong>  ` +
+    `Normal: <strong style="color:#22c55e">${Math.max(0, stats.total - stats.attacks - stats.suspicious)}</strong>`;
+
+  document.getElementById('save-session-modal').style.display = 'flex';
+}
+
+function resumeCapture() {
+  _captureStopped = false;
+  paused = false;
+  const btn = document.getElementById('btn-pause');
+  if (btn) btn.textContent = '⏸ Pause';
+  document.getElementById('save-session-modal').style.display = 'none';
+}
+
+function discardSession() {
+  document.getElementById('save-session-modal').style.display = 'none';
+  clearTable();   // resets store, autoScroll, _suppressScroll guard, etc.
+  // Resume polling only after clearTable() has set up clean state.
+  _captureStopped = false;
+  paused = false;
+  const btn = document.getElementById('btn-pause');
+  if (btn) { btn.textContent = '⏸ Pause'; btn.style.color = ''; }
+}
+
+// Track which format card is selected
+function selectFmt(val) {
+  document.querySelector(`input[name="save-fmt"][value="${val}"]`).checked = true;
+  const cards = {
+    xls: { el: document.getElementById('fmt-xls-lbl'), color: '#22c55e', border: 'rgba(34,197,94,.6)',  bg: 'rgba(34,197,94,.1)'  },
+    csv: { el: document.getElementById('fmt-csv-lbl'), color: '#c8c4be', border: 'rgba(200,196,190,.6)', bg: 'rgba(200,196,190,.08)' },
+    pdf: { el: document.getElementById('fmt-pdf-lbl'), color: '#f87171', border: 'rgba(239,68,68,.6)',  bg: 'rgba(239,68,68,.08)'  },
+  };
+  Object.entries(cards).forEach(([k, c]) => {
+    const active = k === val;
+    c.el.style.border     = active ? `2px solid ${c.border}` : '2px solid #1e1e1e';
+    c.el.style.background = active ? c.bg : 'rgba(15,15,15,.5)';
+    c.el.querySelector('svg').style.stroke = active ? c.color : '#8a8880';
+    c.el.querySelectorAll('span')[0].style.color = active ? c.color : '#f0ede8';
+  });
+}
+
+async function downloadSession() {
+  const fmt = document.querySelector('input[name="save-fmt"]:checked')?.value || 'xls';
+  const ts  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+  // Show loading state on the Download button while we fetch all history.
+  const dlBtn = document.querySelector('button[onclick="downloadSession()"]');
+  if (dlBtn) { dlBtn.textContent = 'Fetching…'; dlBtn.disabled = true; }
+
+  // Paginate backward (before_id) from the current position all the way to
+  // packet #1. The backend only returns the last ~150 packets for a fresh load,
+  // so _store alone misses everything that was captured before this page opened.
+  let allPackets = [];
+  // Start just past the latest seq_id we know about so the first call includes
+  // that packet (before_id is exclusive: returns seq_id < cursor).
+  let cursor = lastSeqId > 0 ? lastSeqId + 1 : 999999999;
+
+  try {
+    while (true) {
+      const params = new URLSearchParams({ before_id: cursor, limit: 5000 });
+      const res = await fetch(`/api/capture/soc?${params}`, { cache: 'no-store' });
+      if (!res.ok) break;
+      const d = await res.json();
+      const batch = d.packets || [];
+      if (batch.length === 0) break;
+      // batch arrives oldest-first; prepend to keep chronological order.
+      allPackets = [...batch, ...allPackets];
+      const firstId = batch[0].seq_id || 0;
+      if (firstId <= 1) break;      // reached the very first packet
+      if (firstId >= cursor) break; // no forward progress — safety stop
+      cursor = firstId;
+    }
+  } catch (e) { /* fall back to in-memory store */ }
+
+  if (dlBtn) { dlBtn.textContent = 'Download'; dlBtn.disabled = false; }
+
+  // Use fetched full history; fall back to in-memory store if API failed.
+  const source = allPackets.length > 0 ? allPackets : _store;
+
+  const COLS = [
+    { label: 'Seq ID',       get: p => p.seq_id      ?? '' },
+    { label: 'Time',         get: p => p.time         ?? '' },
+    { label: 'Source IP',    get: p => p.src          ?? '' },
+    { label: 'Src Port',     get: p => p.src_port     ?? '' },
+    { label: 'Dest IP',      get: p => p.dst          ?? '' },
+    { label: 'Dst Port',     get: p => p.port         ?? '' },
+    { label: 'Protocol',     get: p => p.proto        ?? '' },
+    { label: 'Service',      get: p => svcName(p.port)     },
+    { label: 'Country',      get: p => p.country      ?? '' },
+    { label: 'Rate/5s',      get: p => p.rate         ?? '' },
+    { label: 'Severity',     get: p => p.severity     ?? '' },
+    { label: 'Confidence %', get: p => p.confidence   ?? '' },
+    { label: 'Length',       get: p => p.length       ?? '' },
+    { label: 'Source MAC',   get: p => p.src_mac      ?? '' },
+  ];
+
+  const rows = source.map(p => COLS.map(c => c.get(p)));
+  let blob, ext;
+
+  if (fmt === 'pdf') {
+    if (dlBtn) { dlBtn.textContent = 'Generating…'; dlBtn.disabled = true; }
+
+    // Load jsPDF + autoTable from CDN on first use (cached after that).
+    const loadScript = src => new Promise((res, rej) => {
+      if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    try {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    } catch (e) {
+      if (dlBtn) { dlBtn.textContent = 'Download'; dlBtn.disabled = false; }
+      showToast('Failed to load PDF library — check internet connection.', 'error');
+      return;
+    }
+
+    // Cap at 5000 rows; prioritise threat rows so they are never dropped.
+    const PDF_LIMIT  = 5000;
+    const totalCount = source.length;
+    let pdfSource    = source;
+    if (totalCount > PDF_LIMIT) {
+      const threats  = source.filter(p => p.severity === 'HIGH' || p.severity === 'MEDIUM');
+      const normal   = source.filter(p => !p.severity || p.severity === 'NORMAL');
+      const kept     = [...threats.slice(-PDF_LIMIT)];
+      const fill     = PDF_LIMIT - kept.length;
+      if (fill > 0) kept.push(...normal.slice(-fill));
+      kept.sort((a, b) => (a.seq_id || 0) - (b.seq_id || 0));
+      pdfSource = kept;
+    }
+
+    const capTs  = new Date().toLocaleString();
+    const atkCnt = source.filter(p => p.severity === 'HIGH').length;
+    const susCnt = source.filter(p => p.severity === 'MEDIUM').length;
+    const norCnt = totalCount - atkCnt - susCnt;
+
+    const sevLbl = sev => sev === 'HIGH' ? 'ATTACK' : sev === 'MEDIUM' ? 'SUSPICIOUS' : 'NORMAL';
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.width;
+
+    // Dark header bar
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, W, 22, 'F');
+    doc.setTextColor(241, 245, 249);
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+    doc.text('SOC Live Capture Report', 12, 10);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Generated: ${capTs}   |   ${totalCount.toLocaleString()} packets captured`, 12, 17);
+
+    // Stats row
+    const statY = 26;
+    const statW = (W - 20) / 4;
+    const statItems = [
+      { label: 'Total',      val: totalCount.toLocaleString(), col: [30,41,59]    },
+      { label: 'Attacks',    val: atkCnt.toLocaleString(),     col: [220,38,38]   },
+      { label: 'Suspicious', val: susCnt.toLocaleString(),     col: [217,119,6]   },
+      { label: 'Normal',     val: norCnt.toLocaleString(),     col: [22,163,74]   },
+    ];
+    statItems.forEach((s, i) => {
+      const x = 10 + i * statW;
+      doc.setFillColor(248, 250, 252); doc.rect(x, statY, statW - 2, 14, 'F');
+      doc.setFontSize(7); doc.setTextColor(100, 116, 139); doc.setFont('helvetica', 'normal');
+      doc.text(s.label.toUpperCase(), x + 3, statY + 5);
+      doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...s.col);
+      doc.text(s.val, x + 3, statY + 12);
+    });
+
+    // Truncation warning
+    let tableStartY = statY + 18;
+    if (totalCount > PDF_LIMIT) {
+      doc.setFillColor(254, 249, 195); doc.rect(10, tableStartY, W - 20, 8, 'F');
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(133, 77, 14);
+      doc.text(
+        `Note: Capture has ${totalCount.toLocaleString()} packets. PDF shows ${pdfSource.length.toLocaleString()} (all threats + most recent normal). Use Excel/CSV for full export.`,
+        12, tableStartY + 5
+      );
+      tableStartY += 11;
+    }
+
+    // Packet table — column widths sized to fill A4 landscape (277 mm usable)
+    const tableBody = pdfSource.map(p => [
+      p.seq_id ?? '', p.time ?? '', p.src ?? '', p.src_port ?? '',
+      p.dst ?? '', p.port ?? '', p.proto ?? '', svcName(p.port),
+      p.country ?? '', p.rate ?? '', sevLbl(p.severity || 'NORMAL'), p.confidence ?? '',
+    ]);
+
+    doc.autoTable({
+      head: [['#','Time','Src IP','S.Port','Dst IP','D.Port','Proto','Service','Country','Rate/5s','Status','Conf%']],
+      body: tableBody,
+      startY: tableStartY,
+      styles: {
+        fontSize: 7.2, cellPadding: { top: 2.2, bottom: 2.2, left: 2.5, right: 2 },
+        font: 'helvetica', overflow: 'ellipsize', lineColor: [226, 232, 240], lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: [15, 23, 42], textColor: [241, 245, 249],
+        fontStyle: 'bold', fontSize: 7.5,
+        cellPadding: { top: 3, bottom: 3, left: 2.5, right: 2 },
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      didParseCell: data => {
+        if (data.section !== 'body') return;
+        const sev = pdfSource[data.row.index]?.severity;
+        if (sev === 'HIGH') {
+          data.cell.styles.fillColor   = [255, 241, 241];
+          data.cell.styles.textColor   = [153, 27, 27];
+          // Bold the Status column text for attacks
+          if (data.column.index === 10) data.cell.styles.fontStyle = 'bold';
+        } else if (sev === 'MEDIUM') {
+          data.cell.styles.fillColor = [255, 252, 235];
+          data.cell.styles.textColor = [133, 77, 14];
+        }
+      },
+      columnStyles: {
+        0:  { cellWidth: 14,  halign: 'right'  },   // #
+        1:  { cellWidth: 28                    },   // Time
+        2:  { cellWidth: 36                    },   // Src IP
+        3:  { cellWidth: 14,  halign: 'center' },   // S.Port
+        4:  { cellWidth: 36                    },   // Dst IP
+        5:  { cellWidth: 14,  halign: 'center' },   // D.Port
+        6:  { cellWidth: 18,  halign: 'center' },   // Proto
+        7:  { cellWidth: 24                    },   // Service
+        8:  { cellWidth: 22                    },   // Country
+        9:  { cellWidth: 16,  halign: 'right'  },   // Rate/5s
+        10: { cellWidth: 26,  halign: 'center' },   // Status
+        11: { cellWidth: 14,  halign: 'right'  },   // Conf%
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    // Page footer on every page
+    const pageCount = doc.internal.getNumberOfPages();
+    const pH = doc.internal.pageSize.height;
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240); doc.line(10, pH - 8, W - 10, pH - 8);
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(148, 163, 184);
+      doc.text(`SOC Sniffer  |  ${capTs}`, 10, pH - 4);
+      doc.text(`Page ${i} of ${pageCount}`, W - 10, pH - 4, { align: 'right' });
+    }
+
+    doc.save(`soc_capture_${ts}.pdf`);
+
+    if (dlBtn) { dlBtn.textContent = 'Download'; dlBtn.disabled = false; }
+    document.getElementById('save-session-modal').style.display = 'none';
+    const pktLabel = totalCount > PDF_LIMIT
+      ? `${pdfSource.length.toLocaleString()} of ${totalCount.toLocaleString()} packets`
+      : `${totalCount.toLocaleString()} packets`;
+    showToast(`Downloaded soc_capture_${ts}.pdf  (${pktLabel})`, 'success');
+    return;
+  }
+
+  if (fmt === 'csv') {
+    const escCsv  = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const capTs2  = new Date().toLocaleString();
+    const atkC    = source.filter(p => p.severity === 'HIGH').length;
+    const susC    = source.filter(p => p.severity === 'MEDIUM').length;
+    const norC    = source.length - atkC - susC;
+
+    // Metadata block at top (Excel treats lines starting with # as comments)
+    const meta = [
+      `"SOC Live Capture Report"`,
+      `"Generated:","${capTs2}"`,
+      `"Total Packets:","${source.length}"`,
+      `"Attacks (HIGH):","${atkC}"`,
+      `"Suspicious (MEDIUM):","${susC}"`,
+      `"Normal:","${norC}"`,
+      `""`,                                   // blank separator row
+    ];
+
+    const header = COLS.map(c => escCsv(c.label)).join(',');
+    const body   = rows.map(r => r.map(escCsv).join(','));
+    const csv    = '﻿' + [...meta, header, ...body].join('\r\n');
+    blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    ext  = 'csv';
+  } else {
+    // SpreadsheetML (.xls) — native Excel XML, severity-colored rows, column widths.
+    const x = v => String(v)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    const capTs2 = new Date().toLocaleString();
+    const atkC   = source.filter(p => p.severity === 'HIGH').length;
+    const susC   = source.filter(p => p.severity === 'MEDIUM').length;
+    const norC   = source.length - atkC - susC;
+
+    // Find severity column index to determine row style
+    const SEV_COL = COLS.findIndex(c => c.label === 'Severity');
+
+    // Column pixel widths (approx Excel points)
+    const COL_W = [45, 90, 110, 52, 110, 52, 62, 82, 70, 58, 82, 62, 58, 128];
+    const colDefs = COL_W.map(w => `<Column ss:Width="${w}"/>`).join('');
+
+    const hdrCells = COLS.map(c =>
+      `<Cell ss:StyleID="H"><Data ss:Type="String">${x(c.label)}</Data></Cell>`
+    ).join('');
+
+    const dataRows = source.map((p, i) => {
+      const sev     = p.severity || 'NORMAL';
+      const styleId = sev === 'HIGH' ? 'ATK' : sev === 'MEDIUM' ? 'SUS' : (i % 2 === 0 ? 'R0' : 'R1');
+      const r       = COLS.map(c => c.get(p));
+      const cells   = r.map(v => {
+        const isNum = v !== '' && v !== null && !isNaN(Number(v));
+        return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${x(String(v ?? ''))}</Data></Cell>`;
+      }).join('');
+      return `<Row ss:StyleID="${styleId}">${cells}</Row>`;
+    }).join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<?mso-application progid="Excel.Sheet"?>',
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
+      '  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"',
+      '  xmlns:x="urn:schemas-microsoft-com:office:excel">',
+      '<Styles>',
+      '  <Style ss:ID="TIT"><Font ss:Bold="1" ss:Size="13" ss:Color="#111111"/><Interior ss:Color="#E8E4DE" ss:Pattern="Solid"/></Style>',
+      '  <Style ss:ID="META"><Font ss:Size="9" ss:Color="#555550"/><Interior ss:Color="#F5F4F2" ss:Pattern="Solid"/></Style>',
+      '  <Style ss:ID="STAT"><Font ss:Bold="1" ss:Size="10"/><Interior ss:Color="#F0EDE8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Color="#D8D4CE" ss:Weight="1"/></Borders></Style>',
+      '  <Style ss:ID="H"><Font ss:Bold="1" ss:Color="#F0EDE8" ss:Size="9"/><Interior ss:Color="#1A1A1A" ss:Pattern="Solid"/><Alignment ss:Horizontal="Left"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Color="#C8C4BE" ss:Weight="2"/></Borders></Style>',
+      '  <Style ss:ID="R0"><Font ss:Size="8" ss:Color="#111111"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>',
+      '  <Style ss:ID="R1"><Font ss:Size="8" ss:Color="#111111"/><Interior ss:Color="#F5F4F2" ss:Pattern="Solid"/></Style>',
+      '  <Style ss:ID="ATK"><Font ss:Bold="1" ss:Size="8" ss:Color="#991B1B"/><Interior ss:Color="#FFF5F5" ss:Pattern="Solid"/></Style>',
+      '  <Style ss:ID="SUS"><Font ss:Size="8" ss:Color="#854D0E"/><Interior ss:Color="#FFFBEB" ss:Pattern="Solid"/></Style>',
+      '</Styles>',
+      '<Worksheet ss:Name="SOC Capture">',
+      `<Table>${colDefs}`,
+      // Summary block at top
+      `<Row ss:Height="22"><Cell ss:MergeAcross="${COLS.length - 1}" ss:StyleID="TIT"><Data ss:Type="String">SOC Live Capture Report</Data></Cell></Row>`,
+      `<Row><Cell ss:MergeAcross="${COLS.length - 1}" ss:StyleID="META"><Data ss:Type="String">Generated: ${x(capTs2)}</Data></Cell></Row>`,
+      `<Row><Cell ss:StyleID="STAT"><Data ss:Type="String">Total Packets</Data></Cell><Cell ss:StyleID="STAT"><Data ss:Type="Number">${source.length}</Data></Cell><Cell ss:MergeAcross="${COLS.length - 3}"/></Row>`,
+      `<Row><Cell ss:StyleID="ATK"><Data ss:Type="String">Attacks (HIGH)</Data></Cell><Cell ss:StyleID="ATK"><Data ss:Type="Number">${atkC}</Data></Cell><Cell ss:MergeAcross="${COLS.length - 3}"/></Row>`,
+      `<Row><Cell ss:StyleID="SUS"><Data ss:Type="String">Suspicious (MEDIUM)</Data></Cell><Cell ss:StyleID="SUS"><Data ss:Type="Number">${susC}</Data></Cell><Cell ss:MergeAcross="${COLS.length - 3}"/></Row>`,
+      `<Row><Cell ss:StyleID="R0"><Data ss:Type="String">Normal</Data></Cell><Cell ss:StyleID="R0"><Data ss:Type="Number">${norC}</Data></Cell><Cell ss:MergeAcross="${COLS.length - 3}"/></Row>`,
+      '<Row/>',
+      `<Row>${hdrCells}</Row>`,
+      dataRows,
+      '</Table>',
+      '</Worksheet>',
+      '</Workbook>',
+    ].join('\n');
+
+    blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    ext  = 'xls';
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a   = Object.assign(document.createElement('a'), {
+    href: url, download: `soc_capture_${ts}.${ext}`,
+  });
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+
+  document.getElementById('save-session-modal').style.display = 'none';
+  showToast(`Downloaded ${a.download}  (${source.length.toLocaleString()} packets, ${fmt.toUpperCase()})`, 'success');
+}
+</script>
+{% endblock %}

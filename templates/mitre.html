@@ -1,0 +1,209 @@
+{% extends "base_soc.html" %}
+{% block title %}MITRE ATT&CK{% endblock %}
+{% block page_title %}MITRE ATT&CK Mapping{% endblock %}
+
+{% block content %}
+<style>
+.mitre-intro { background:rgba(138,136,128,.08); border:1px solid rgba(138,136,128,.22);
+               border-radius:10px; padding:14px 18px; margin-bottom:20px;
+               font-size:13px; color:var(--text-muted); }
+.mitre-intro a { color:#c8c4be; }
+
+.tactic-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; }
+.tactic-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px;
+               padding:16px 18px; }
+.tactic-header { font-size:13px; font-weight:700; color:#c8c4be; margin-bottom:12px;
+                 display:flex; align-items:center; gap:8px; }
+.tactic-icon { width:28px; height:28px; border-radius:6px; background:rgba(138,136,128,.18);
+               display:flex; align-items:center; justify-content:center; font-size:14px; }
+
+.tech-row { display:flex; align-items:flex-start; gap:10px; padding:7px 0;
+            border-bottom:1px solid rgba(255,255,255,.05); }
+.tech-row:last-child { border-bottom:none; }
+.tech-id   { font-family:monospace; font-size:11px; color:#8a8880; flex-shrink:0; width:72px; }
+.tech-name { font-size:12px; color:var(--text); flex:1; }
+.tech-count { font-size:11px; color:var(--text-muted); background:rgba(255,255,255,.07);
+              border-radius:4px; padding:1px 6px; white-space:nowrap; }
+
+.fired-rule { background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.2);
+              border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+.fired-rule .fr-name { font-size:13px; font-weight:600; }
+.fired-rule .fr-meta { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+.rules-table { width:100%; border-collapse:collapse; font-size:12px; }
+.rules-table th { padding:9px 12px; text-align:left; color:var(--text-muted); font-size:10px;
+                  font-weight:600; text-transform:uppercase; border-bottom:1px solid var(--border); }
+.rules-table td { padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:middle; }
+.rules-table tr:hover td { background:rgba(255,255,255,.03); }
+
+.toggle-pill { position:relative; width:36px; height:20px; display:inline-block; }
+.toggle-pill input { opacity:0; width:0; height:0; }
+.toggle-slider { position:absolute; cursor:pointer; inset:0; background:rgba(255,255,255,.15);
+                 border-radius:20px; transition:.2s; }
+.toggle-pill input:checked + .toggle-slider { background:#8a8880; }
+.toggle-slider:before { position:absolute; content:""; height:14px; width:14px; left:3px; bottom:3px;
+                         background:#fff; border-radius:50%; transition:.2s; }
+.toggle-pill input:checked + .toggle-slider:before { transform:translateX(16px); }
+</style>
+
+<div class="mitre-intro">
+  MITRE ATT&CK® is a globally-accessible knowledge base of adversary tactics and techniques.
+  This view maps your detected alerts and active correlation rules to ATT&CK framework categories.
+  <a href="https://attack.mitre.org/" target="_blank" rel="noopener">→ attack.mitre.org</a>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:20px;">
+
+  <!-- Tactic grid -->
+  <div>
+    <div class="card-title" style="margin-bottom:14px;">ATT&CK Tactics — Detected Activity</div>
+    <div class="tactic-grid" id="tactic-grid">
+      <div style="color:var(--text-muted);font-size:13px;padding:20px;">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Recently fired correlation rules -->
+  <div>
+    <div class="soc-card" style="height:fit-content;">
+      <div class="card-title">Recently Fired Rules</div>
+      <div id="fired-rules">
+        <div style="color:var(--text-muted);font-size:12px;">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- All Correlation Rules -->
+<div class="soc-card">
+  <div class="card-title">Correlation Rules</div>
+  <div style="overflow-x:auto;">
+    <table class="rules-table">
+      <thead>
+        <tr>
+          <th>Rule Name</th>
+          <th>Type</th>
+          <th>Severity</th>
+          <th>MITRE Tactic</th>
+          <th>Technique</th>
+          <th>Fires</th>
+          <th>Last Fired</th>
+          <th>Enabled</th>
+        </tr>
+      </thead>
+      <tbody id="rules-tbody">
+        <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const TACTIC_ICONS = {
+  'Discovery':           '🔍',
+  'Impact':              '💥',
+  'Credential Access':   '🔑',
+  'Command and Control': '📡',
+  'Lateral Movement':    '↔️',
+  'Exfiltration':        '📤',
+  'Execution':           '⚡',
+  'Persistence':         '⚓',
+  'Defense Evasion':     '🛡',
+  'Initial Access':      '🚪',
+};
+
+const SEV_COLOR = {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fcd34d',LOW:'#86efac'};
+
+async function loadMitre() {
+  const r = await fetch('/api/mitre/summary');
+  if (!r.ok) return;
+  const d = await r.json();
+
+  // Tactic grid
+  const grid = document.getElementById('tactic-grid');
+  if (!d.tactics || !d.tactics.length) {
+    grid.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:10px;">No ATT&CK activity detected yet.</div>';
+  } else {
+    grid.innerHTML = d.tactics.map(t => `
+      <div class="tactic-card">
+        <div class="tactic-header">
+          <div class="tactic-icon">${TACTIC_ICONS[t.tactic] || '⚔️'}</div>
+          ${t.tactic}
+        </div>
+        ${t.techniques.map(tech => `
+          <div class="tech-row">
+            <span class="tech-id">${tech.id}</span>
+            <span class="tech-name">${tech.name}</span>
+            <span class="tech-count">${tech.count} event${tech.count !== 1 ? 's' : ''}</span>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+  }
+
+  // Fired rules
+  const firedEl = document.getElementById('fired-rules');
+  if (!d.fired_rules || !d.fired_rules.length) {
+    firedEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No rules fired recently.</div>';
+  } else {
+    firedEl.innerHTML = d.fired_rules.map(r => `
+      <div class="fired-rule">
+        <div class="fr-name">${escHtml(r.name)}</div>
+        <div class="fr-meta">
+          <span style="color:${SEV_COLOR[r.severity] || '#9ca3af'};">${r.severity}</span>
+          · ${r.mitre_tactic || '—'}
+          · Fired ${r.fire_count}×
+          ${r.last_fired ? '· Last: ' + new Date(r.last_fired).toLocaleString() : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+async function loadRules() {
+  const r = await fetch('/api/mitre/rules');
+  if (!r.ok) return;
+  const rules = await r.json();
+  const tbody = document.getElementById('rules-tbody');
+  if (!rules.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">No rules</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rules.map(rule => `
+    <tr>
+      <td style="font-weight:600;">${escHtml(rule.name)}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${rule.rule_type}</td>
+      <td><span style="color:${SEV_COLOR[rule.severity]||'#9ca3af'};font-weight:700;font-size:12px;">${rule.severity}</span></td>
+      <td style="font-size:12px;">${rule.mitre_tactic || '—'}</td>
+      <td style="font-family:monospace;font-size:11px;color:#c8c4be;">
+        ${rule.mitre_tech ? `<a href="https://attack.mitre.org/techniques/${(rule.mitre_tech||'').replace('.','/')}/" target="_blank" rel="noopener" style="color:#c8c4be;">${rule.mitre_tech}</a>` : '—'}
+      </td>
+      <td style="font-size:12px;">${rule.fire_count}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${rule.last_fired ? new Date(rule.last_fired).toLocaleString() : 'Never'}</td>
+      <td>
+        <label class="toggle-pill">
+          <input type="checkbox" ${rule.enabled ? 'checked' : ''} onchange="toggleRule(${rule.id}, this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function toggleRule(id, enabled) {
+  await fetch('/api/mitre/rules/' + id, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+    body: JSON.stringify({enabled}),
+  });
+  showToast(enabled ? 'Rule enabled' : 'Rule disabled', 'success');
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadMitre();
+loadRules();
+setInterval(() => { loadMitre(); loadRules(); }, 20000);
+</script>
+{% endblock %}

@@ -1,0 +1,491 @@
+{% extends "base_soc.html" %}
+{% block title %}Port Scanner{% endblock %}
+{% block page_title %}Port Scanner{% endblock %}
+
+{% block content %}
+<!-- jsPDF + autoTable for PDF export (loaded lazily on first use) -->
+<style>
+/* ── Scanner layout ── */
+.scan-form-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:16px; }
+.scan-input-row  { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+.scan-input-group { display:flex; flex-direction:column; gap:5px; }
+.scan-label  { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); }
+.scan-input  { background:#0a0a0a; border:1px solid var(--border); border-radius:6px;
+               color:var(--text); padding:9px 12px; font-size:13px;
+               font-family:var(--font-mono); outline:none; transition:border-color .15s;
+               min-width:240px; }
+.scan-input:focus { border-color:#4ade80; }
+
+/* Mode buttons */
+.mode-row   { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.mode-btn   { padding:7px 18px; border-radius:7px; font-size:12px; font-weight:600;
+              cursor:pointer; border:1px solid var(--border); background:var(--bg3);
+              color:var(--text-muted); transition:all .15s; }
+.mode-btn:hover  { border-color:var(--border2); color:var(--text); }
+.mode-btn.active { background:rgba(74,222,128,.12); border-color:#4ade80; color:#4ade80; }
+
+/* Custom ports input */
+#custom-row { display:none; margin-bottom:14px; }
+
+/* Start / Stop buttons */
+.btn-scan  { padding:9px 28px; border-radius:7px; font-size:13px; font-weight:700;
+             cursor:pointer; border:none; background:linear-gradient(135deg,#16a34a,#15803d);
+             color:#fff; transition:all .15s; letter-spacing:.03em; }
+.btn-scan:hover   { background:linear-gradient(135deg,#22c55e,#16a34a); }
+.btn-scan:disabled { opacity:.4; cursor:not-allowed; }
+.btn-stop  { padding:9px 22px; border-radius:7px; font-size:13px; font-weight:700;
+             cursor:pointer; border:1px solid rgba(239,68,68,.5);
+             background:rgba(239,68,68,.12); color:#f87171; transition:all .15s; }
+.btn-stop:hover { background:rgba(239,68,68,.25); }
+
+/* Progress */
+#scan-progress-wrap { margin-bottom:14px; display:none; }
+.progress-bar-bg    { height:8px; background:var(--bg3); border-radius:99px; overflow:hidden; }
+.progress-bar-fill  { height:100%; background:linear-gradient(90deg,#16a34a,#4ade80);
+                      border-radius:99px; transition:width .4s ease; }
+.scan-meta-row      { display:flex; gap:20px; flex-wrap:wrap; margin-top:8px; font-size:11px;
+                      font-family:var(--font-mono); color:var(--text-muted); }
+.scan-meta-val      { color:var(--text); font-weight:600; }
+
+/* Results */
+.results-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+                padding:0; overflow:hidden; margin-bottom:16px; }
+.results-header { padding:12px 16px; display:flex; align-items:center; gap:12px;
+                  border-bottom:1px solid var(--border); }
+.results-table-wrap { overflow-x:auto; max-height:480px; overflow-y:auto; }
+table.scan-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+table.scan-tbl th { padding:8px 14px; text-align:left; color:var(--text-muted);
+                    border-bottom:1px solid var(--border); font-size:10px; font-weight:700;
+                    text-transform:uppercase; letter-spacing:.06em; position:sticky;
+                    top:0; background:var(--bg2); white-space:nowrap; }
+table.scan-tbl td { padding:8px 14px; border-bottom:1px solid rgba(30,30,30,.6);
+                    vertical-align:middle; }
+table.scan-tbl tr:last-child td { border-bottom:none; }
+table.scan-tbl tr:hover td { background:rgba(255,255,255,.02); }
+.port-num    { font-family:var(--font-mono); font-weight:700; color:#4ade80; font-size:13px; }
+.svc-badge   { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px;
+               font-weight:600; background:rgba(74,222,128,.12); color:#4ade80;
+               border:1px solid rgba(74,222,128,.25); }
+.banner-text { font-family:var(--font-mono); font-size:10px; color:#8a8880;
+               max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* History */
+.history-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+                padding:0; overflow:hidden; }
+.history-card .card-header { padding:12px 16px; border-bottom:1px solid var(--border); }
+table.hist-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+table.hist-tbl th { padding:8px 14px; text-align:left; color:var(--text-muted);
+                    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+                    border-bottom:1px solid var(--border); background:var(--bg2);
+                    position:sticky; top:0; }
+table.hist-tbl td { padding:8px 14px; border-bottom:1px solid rgba(30,30,30,.5);
+                    vertical-align:middle; font-size:12px; }
+table.hist-tbl tr:last-child td { border-bottom:none; }
+table.hist-tbl tr:hover td { background:rgba(255,255,255,.02); cursor:pointer; }
+</style>
+
+<!-- ══ SCAN FORM ══════════════════════════════════════════════════════════ -->
+<div class="scan-form-card">
+  <div class="scan-input-row">
+    <div class="scan-input-group" style="flex:1;min-width:220px;">
+      <label class="scan-label">Target IP / Hostname</label>
+      <input id="scan-target" class="scan-input" type="text"
+             placeholder="192.168.1.1 or example.com" autocomplete="off" spellcheck="false" />
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button id="btn-start" class="btn-scan" onclick="startScan()">▶ Start Scan</button>
+      <button id="btn-stop"  class="btn-stop" onclick="stopScan()" style="display:none;">■ Stop</button>
+    </div>
+  </div>
+
+  <!-- Mode selection -->
+  <div class="scan-label" style="margin-bottom:8px;">Scan Profile</div>
+  <div class="mode-row">
+    <button class="mode-btn active" data-mode="quick"  onclick="setMode(this)">⚡ Quick (23 ports)</button>
+    <button class="mode-btn"        data-mode="common" onclick="setMode(this)">🔍 Common (1100+ ports)</button>
+    <button class="mode-btn"        data-mode="full"   onclick="setMode(this)">🌐 Full (1–65535)</button>
+    <button class="mode-btn"        data-mode="custom" onclick="setMode(this)">✏ Custom</button>
+  </div>
+
+  <div id="custom-row">
+    <label class="scan-label">Custom Ports</label>
+    <input id="custom-ports" class="scan-input" type="text"
+           placeholder="22, 80, 443, 8000-8100"
+           style="min-width:380px;margin-top:5px;" />
+    <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+      Separate ports with commas. Ranges with a dash: 8000-8100
+    </div>
+  </div>
+</div>
+
+<!-- ══ PROGRESS ═══════════════════════════════════════════════════════════ -->
+<div id="scan-progress-wrap" class="scan-form-card" style="padding:16px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <span style="font-size:12px;font-weight:600;color:var(--text);" id="progress-label">Scanning…</span>
+    <span style="font-size:12px;font-family:var(--font-mono);color:#4ade80;" id="progress-pct">0%</span>
+  </div>
+  <div class="progress-bar-bg">
+    <div class="progress-bar-fill" id="progress-bar" style="width:0%;"></div>
+  </div>
+  <div class="scan-meta-row" id="scan-meta">
+    <span>Target: <span class="scan-meta-val" id="meta-target">—</span></span>
+    <span>Ports: <span class="scan-meta-val" id="meta-done">0</span> / <span class="scan-meta-val" id="meta-total">0</span></span>
+    <span>Open: <span class="scan-meta-val" style="color:#4ade80;" id="meta-open">0</span></span>
+    <span>Elapsed: <span class="scan-meta-val" id="meta-elapsed">0s</span></span>
+  </div>
+</div>
+
+<!-- ══ RESULTS ════════════════════════════════════════════════════════════ -->
+<div class="results-card" id="results-card" style="display:none;">
+  <div class="results-header">
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);">
+      Open Ports
+    </span>
+    <span class="card-badge" id="results-count">0</span>
+    <span id="results-target-label" style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted);margin-left:auto;"></span>
+    <button onclick="exportPDF()" id="btn-pdf" style="margin-left:12px;padding:4px 14px;border-radius:5px;font-size:11px;
+      font-weight:600;cursor:pointer;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.1);
+      color:#f87171;transition:all .15s;" onmouseover="this.style.background='rgba(239,68,68,.2)'"
+      onmouseout="this.style.background='rgba(239,68,68,.1)'">⬇ PDF Report</button>
+  </div>
+  <div class="results-table-wrap">
+    <table class="scan-tbl">
+      <thead>
+        <tr>
+          <th style="width:80px;">Port</th>
+          <th style="width:140px;">Service</th>
+          <th style="width:80px;">State</th>
+          <th>Banner / Version</th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ SCAN HISTORY ═══════════════════════════════════════════════════════ -->
+<div class="history-card">
+  <div class="card-header" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+    <span class="card-title">Scan History</span>
+    <span class="card-badge" id="hist-count">0</span>
+  </div>
+  <div style="overflow-x:auto;max-height:280px;overflow-y:auto;">
+    <table class="hist-tbl">
+      <thead>
+        <tr>
+          <th>Time</th><th>Target</th><th>Profile</th>
+          <th>Ports Scanned</th><th>Open</th><th>Duration</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="hist-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No scans yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let _scanId  = null;
+let _pollTimer = null;
+let _mode    = 'quick';
+let _results = [];
+
+function getCsrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Mode selection ────────────────────────────────────────────────────────────
+function setMode(btn) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _mode = btn.dataset.mode;
+  document.getElementById('custom-row').style.display = _mode === 'custom' ? 'block' : 'none';
+}
+
+// ── Start scan ────────────────────────────────────────────────────────────────
+async function startScan() {
+  const target = document.getElementById('scan-target').value.trim();
+  if (!target) { alert('Enter a target IP or hostname.'); return; }
+  if (_mode === 'full' && !confirm('Full scan checks all 65535 ports and may take several minutes. Continue?')) return;
+
+  const payload = { target, mode: _mode, custom: document.getElementById('custom-ports').value };
+  const res = await fetch('/api/scan/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    body: JSON.stringify(payload),
+  });
+  const d = await res.json();
+  if (!res.ok) { alert(d.error || 'Failed to start scan'); return; }
+
+  _scanId  = d.scan_id;
+  _results = [];
+
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').style.display  = 'inline-flex';
+  document.getElementById('scan-progress-wrap').style.display = 'block';
+  document.getElementById('results-card').style.display = 'none';
+  document.getElementById('results-tbody').innerHTML = '';
+  document.getElementById('results-count').textContent = '0';
+  document.getElementById('meta-target').textContent = d.target;
+  document.getElementById('meta-total').textContent  = d.total.toLocaleString();
+
+  clearInterval(_pollTimer);
+  _pollTimer = setInterval(pollScan, 1000);
+}
+
+// ── Stop scan ─────────────────────────────────────────────────────────────────
+async function stopScan() {
+  if (!_scanId) return;
+  await fetch(`/api/scan/${_scanId}/stop`, {
+    method: 'POST', headers: { 'X-CSRFToken': getCsrf() }
+  });
+}
+
+// ── Poll status ───────────────────────────────────────────────────────────────
+async function pollScan() {
+  if (!_scanId) return;
+  try {
+    const res = await fetch(`/api/scan/${_scanId}/status`, { cache: 'no-store' });
+    if (!res.ok) { clearInterval(_pollTimer); return; }
+    const d = await res.json();
+
+    // Update progress
+    const pct = d.progress.toFixed(1);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent  = pct + '%';
+    document.getElementById('progress-label').textContent =
+      d.status === 'running' ? `Scanning ${d.hostname} …` : `Scan ${d.status}`;
+    document.getElementById('meta-done').textContent    = d.ports_done.toLocaleString();
+    document.getElementById('meta-open').textContent    = d.open_count;
+    document.getElementById('meta-elapsed').textContent = d.elapsed + 's';
+
+    // Render new results
+    if (d.results.length !== _results.length) {
+      _results = d.results;
+      renderResults(_results, d.hostname);
+    }
+
+    if (d.status !== 'running') {
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-stop').style.display = 'none';
+      document.getElementById('progress-label').textContent =
+        `Scan complete — ${d.open_count} open port${d.open_count !== 1 ? 's' : ''} found in ${d.elapsed}s`;
+      loadHistory();
+    }
+  } catch (e) {
+    clearInterval(_pollTimer);
+  }
+}
+
+// ── Render results table ──────────────────────────────────────────────────────
+function renderResults(results, hostname) {
+  if (!results.length) return;
+  document.getElementById('results-card').style.display = 'block';
+  document.getElementById('results-count').textContent  = results.length;
+  document.getElementById('results-target-label').textContent = hostname || '';
+
+  document.getElementById('results-tbody').innerHTML = results.map(r => `
+    <tr>
+      <td class="port-num">${r.port}</td>
+      <td><span class="svc-badge">${escHtml(r.service)}</span></td>
+      <td><span style="color:#4ade80;font-size:11px;font-weight:700;">● OPEN</span></td>
+      <td class="banner-text" title="${escHtml(r.banner)}">${escHtml(r.banner || '—')}</td>
+    </tr>`).join('');
+}
+
+// ── Export PDF — same theme as Live Capture PDF ───────────────────────────────
+async function exportPDF() {
+  if (!_results.length) { alert('No open ports to export.'); return; }
+
+  const btn = document.getElementById('btn-pdf');
+  if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+
+  // Load jsPDF + autoTable lazily (same pattern as capture.html)
+  const loadScript = src => new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  try {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  } catch (e) {
+    if (btn) { btn.textContent = '⬇ PDF Report'; btn.disabled = false; }
+    alert('Failed to load PDF library — check internet connection.');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const W    = doc.internal.pageSize.width;
+  const H    = doc.internal.pageSize.height;
+  const now  = new Date();
+  const capTs = now.toLocaleString();
+
+  const target  = document.getElementById('scan-target').value.trim();
+  const metaIP  = document.getElementById('meta-target').textContent;
+  const elapsed = document.getElementById('meta-elapsed').textContent;
+  const total   = document.getElementById('meta-total').textContent;
+  const openCnt = _results.length;
+  const modeLbl = document.querySelector('.mode-btn.active')?.textContent?.trim() || '';
+
+  // ── Dark header bar — identical to capture.html ──────────────────────────
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 22, 'F');
+  doc.setTextColor(241, 245, 249);
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+  doc.text('SOC Port Scan Report', 12, 10);
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Generated: ${capTs}   |   Target: ${target || metaIP}   |   ${openCnt} open port${openCnt !== 1 ? 's' : ''} found`, 12, 17);
+
+  // ── Stats row — white cards identical to capture.html ────────────────────
+  const statY = 26;
+  const statW = (W - 20) / 4;
+  const riskCol = openCnt >= 20 ? [220, 38, 38] : openCnt >= 5 ? [217, 119, 6] : [22, 163, 74];
+  const statItems = [
+    { label: 'Target',        val: (target || metaIP).slice(0, 24), col: [30, 41, 59]  },
+    { label: 'Ports Scanned', val: total,                            col: [30, 41, 59]  },
+    { label: 'Open Ports',    val: String(openCnt),                  col: riskCol       },
+    { label: 'Duration',      val: elapsed,                          col: [22, 163, 74] },
+  ];
+  statItems.forEach((s, i) => {
+    const x = 10 + i * statW;
+    doc.setFillColor(248, 250, 252); doc.rect(x, statY, statW - 2, 14, 'F');
+    doc.setFontSize(7); doc.setTextColor(100, 116, 139); doc.setFont('helvetica', 'normal');
+    doc.text(s.label.toUpperCase(), x + 3, statY + 5);
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...s.col);
+    doc.text(s.val, x + 3, statY + 12);
+  });
+
+  // ── Scan profile note ────────────────────────────────────────────────────
+  let tableStartY = statY + 18;
+  doc.setFillColor(239, 246, 255);
+  doc.rect(10, tableStartY, W - 20, 7, 'F');
+  doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 64, 175);
+  doc.text(`Scan Profile: ${modeLbl}   |   Resolved IP: ${metaIP}   |   Scan completed in ${elapsed}`, 12, tableStartY + 4.5);
+  tableStartY += 10;
+
+  // ── Open ports table — autoTable with capture.html styles ────────────────
+  const tableBody = _results.map((r, i) => [
+    i + 1,
+    r.port,
+    r.service || 'Unknown',
+    'OPEN',
+    r.banner || '—',
+  ]);
+
+  doc.autoTable({
+    head: [['#', 'Port', 'Service', 'State', 'Banner / Version']],
+    body: tableBody,
+    startY: tableStartY,
+    styles: {
+      fontSize: 7.5,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 2 },
+      font: 'helvetica',
+      overflow: 'ellipsize',
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [241, 245, 249],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: { top: 3, bottom: 3, left: 3, right: 2 },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: data => {
+      if (data.section !== 'body') return;
+      // State column — always green bold
+      if (data.column.index === 3) {
+        data.cell.styles.textColor = [22, 163, 74];
+        data.cell.styles.fontStyle = 'bold';
+      }
+      // Port column — dark bold
+      if (data.column.index === 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [15, 23, 42];
+      }
+      // Service — semi-bold
+      if (data.column.index === 2) {
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'right'  },  // #
+      1: { cellWidth: 20, halign: 'center' },  // Port
+      2: { cellWidth: 38                   },  // Service
+      3: { cellWidth: 20, halign: 'center' },  // State
+      4: { cellWidth: 'auto'               },  // Banner
+    },
+    margin: { left: 10, right: 10 },
+  });
+
+  // ── Footer on every page ─────────────────────────────────────────────────
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(10, H - 8, W - 10, H - 8);
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text(`SOC Platform — Port Scan Report  |  ${capTs}`, 10, H - 4);
+    doc.text(`Page ${i} of ${pageCount}`, W - 10, H - 4, { align: 'right' });
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────────
+  const fname = `PortScan_${(target || metaIP).replace(/[^a-zA-Z0-9._-]/g,'_')}_${now.toISOString().slice(0,10)}.pdf`;
+  doc.save(fname);
+
+  if (btn) { btn.textContent = '⬇ PDF Report'; btn.disabled = false; }
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/scan/history', { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+    const hist = d.history || [];
+    document.getElementById('hist-count').textContent = hist.length;
+
+    if (!hist.length) {
+      document.getElementById('hist-tbody').innerHTML =
+        '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No scans yet</td></tr>';
+      return;
+    }
+
+    const modeLabel = { quick:'Quick', common:'Common', full:'Full', custom:'Custom' };
+    const statusColor = s => s === 'done' ? '#4ade80' : s === 'stopped' ? '#f97316' : '#8a8880';
+
+    document.getElementById('hist-tbody').innerHTML = hist.map(h => `<tr>
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${escHtml(h.timestamp)}</td>
+      <td style="font-family:var(--font-mono);font-weight:600;">${escHtml(h.target)}<br>
+        <span style="font-size:10px;color:var(--text-muted);">${escHtml(h.hostname||'')}</span></td>
+      <td style="font-size:11px;">${escHtml(modeLabel[h.mode]||h.mode||'—')}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;">${(h.ports_total||0).toLocaleString()}</td>
+      <td style="font-family:var(--font-mono);font-weight:700;color:#4ade80;">${h.open_count}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;">${h.elapsed}s</td>
+      <td><span style="font-size:10px;font-weight:700;color:${statusColor(h.status)};">${h.status.toUpperCase()}</span></td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+// Enter key starts scan
+document.getElementById('scan-target').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startScan();
+});
+
+loadHistory();
+</script>
+{% endblock %}

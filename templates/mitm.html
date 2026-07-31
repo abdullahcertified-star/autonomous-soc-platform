@@ -1,0 +1,570 @@
+{% extends "base_soc.html" %}
+{% block title %}MITM Detection{% endblock %}
+{% block page_title %}MITM / ARP Spoofing Detection{% endblock %}
+
+{% block content %}
+<style>
+/* ── MITM Module ─────────────────────────────────────────────────────────── */
+.mitm-status-banner {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: border-color .4s, box-shadow .4s, background .4s;
+}
+.mitm-status-banner.state-secure {
+  background: rgba(34,197,94,.03);
+  border-color: rgba(34,197,94,.2);
+}
+.mitm-status-banner.state-suspicious {
+  background: rgba(251,191,36,.03);
+  border-color: rgba(251,191,36,.2);
+}
+.mitm-status-banner.state-attack {
+  background: rgba(239,68,68,.05);
+  border-color: rgba(239,68,68,.4);
+  animation: mitm-border-pulse 2s ease-in-out infinite;
+}
+.mitm-status-banner.state-blocked {
+  background: rgba(34,197,94,.03);
+  border-color: rgba(34,197,94,.25);
+}
+
+@keyframes mitm-border-pulse {
+  0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,.15); border-color:rgba(239,68,68,.4); }
+  50%      { box-shadow:0 0 22px 4px rgba(239,68,68,.12); border-color:rgba(239,68,68,.7); }
+}
+
+.mitm-status-icon {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+  transition: all .4s;
+}
+.state-secure   .mitm-status-icon { background:rgba(34,197,94,.1);  border:1px solid rgba(34,197,94,.25); }
+.state-suspicious .mitm-status-icon{ background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25); }
+.state-attack   .mitm-status-icon { background:rgba(239,68,68,.15); border:1px solid rgba(239,68,68,.4); animation:icon-pulse 1.5s ease-in-out infinite; }
+.state-blocked  .mitm-status-icon { background:rgba(34,197,94,.1);  border:1px solid rgba(34,197,94,.25); }
+@keyframes icon-pulse {
+  0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,.5); }
+  50%      { box-shadow:0 0 0 8px rgba(239,68,68,.0); }
+}
+
+.mitm-status-title { font-size:16px; font-weight:700; margin-bottom:3px; letter-spacing:-.2px; transition:color .3s; }
+.mitm-status-sub   { font-size:11px; color:var(--text-muted); font-family:var(--font-mono); }
+
+.mitm-status-badge {
+  font-size:10px; font-weight:700; letter-spacing:.08em;
+  padding:4px 12px; border-radius:99px; text-transform:uppercase; transition:all .3s;
+}
+.badge-secure     { background:rgba(34,197,94,.15);  color:#4ade80; border:1px solid rgba(34,197,94,.3); }
+.badge-suspicious { background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.3); }
+.badge-attack     { background:rgba(239,68,68,.2);   color:#f87171; border:1px solid rgba(239,68,68,.4); animation:badge-glow 1.2s ease-in-out infinite; }
+.badge-blocked    { background:rgba(34,197,94,.15);  color:#4ade80; border:1px solid rgba(34,197,94,.3); }
+@keyframes badge-glow {
+  0%,100% { box-shadow:none; }
+  50%      { box-shadow:0 0 10px rgba(239,68,68,.4); }
+}
+
+.mitm-attack-warning {
+  display:none;
+  background:rgba(239,68,68,.06);
+  border:1px solid rgba(239,68,68,.3);
+  border-radius:var(--radius);
+  padding:12px 16px; margin-bottom:14px;
+}
+.mitm-attack-warning.visible { display:flex; align-items:flex-start; gap:12px; animation:slide-in .3s ease; }
+@keyframes slide-in { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+
+.mitm-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.mitm-detail-cell {
+  display:flex; flex-direction:column; gap:3px;
+  background:var(--bg3); border:1px solid var(--border);
+  border-radius:6px; padding:10px 12px;
+}
+.mitm-detail-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); }
+.mitm-detail-value { font-size:13px; font-weight:600; font-family:var(--font-mono); color:var(--text); }
+
+.mitm-timeline { display:flex; flex-direction:column; }
+.mitm-tl-item {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:9px 0; border-bottom:1px solid var(--border);
+}
+.mitm-tl-item:last-child { border-bottom:none; }
+.mitm-tl-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:3px; }
+.mitm-tl-time { font-size:10px; font-family:var(--font-mono); color:var(--text-muted); flex-shrink:0; min-width:74px; }
+.mitm-tl-text { font-size:11px; color:var(--text); line-height:1.45; }
+
+.mitm-secure-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; }
+.mitm-secure-item {
+  background:rgba(34,197,94,.04); border:1px solid rgba(34,197,94,.15);
+  border-radius:6px; padding:10px 14px; display:flex; align-items:center; gap:10px;
+}
+.msi-icon { font-size:16px; }
+.msi-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+.msi-value { font-size:12px; font-weight:700; color:#4ade80; }
+
+/* MITM toast */
+.mitm-toast {
+  position:fixed; top:20px; right:20px;
+  width:320px; z-index:10001;
+  background:linear-gradient(135deg,#1c0a0a 0%,#2d0f0f 100%);
+  border:1px solid rgba(239,68,68,.5);
+  border-radius:12px; padding:14px 16px;
+  box-shadow:0 4px 24px rgba(239,68,68,.25),0 2px 10px rgba(0,0,0,.6);
+  display:none;
+}
+.mitm-toast.visible { display:block; animation:toast-in .35s cubic-bezier(.34,1.56,.64,1); }
+@keyframes toast-in { from{opacity:0;transform:translateX(30px) scale(.95)} to{opacity:1;transform:none} }
+.mitm-toast.out { animation:toast-out .3s ease forwards; }
+@keyframes toast-out { to{opacity:0;transform:translateX(30px) scale(.95)} }
+</style>
+
+<!-- MITM Attack Toast (page-scoped, MITM page only) -->
+<div class="mitm-toast" id="mitm-toast">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+    <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;
+      box-shadow:0 0 8px rgba(239,68,68,.9);flex-shrink:0;animation:badge-glow 1.2s ease-in-out infinite;"></div>
+    <span style="font-size:12px;font-weight:700;color:#f87171;letter-spacing:.06em;">SECURITY ALERT</span>
+    <button onclick="dismissToast()"
+      style="margin-left:auto;background:none;border:none;color:#8a8880;cursor:pointer;font-size:16px;line-height:1;padding:0 2px;">✕</button>
+  </div>
+  <div style="font-size:13px;font-weight:700;color:#f0ede8;margin-bottom:4px;">MITM Attack Detected</div>
+  <div style="font-size:11px;color:#fca5a5;line-height:1.5;margin-bottom:10px;" id="toast-detail">
+    ARP Spoofing activity has been identified on the network.
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="dismissToast()"
+      style="flex:1;background:rgba(138,136,128,.1);border:1px solid #1e1e1e;color:#8a8880;
+             padding:6px;border-radius:6px;cursor:pointer;font-size:11px;">Dismiss</button>
+    <button onclick="document.getElementById('mitm-events-section').scrollIntoView({behavior:'smooth'})"
+      style="flex:1;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#f87171;
+             padding:6px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;">View Events</button>
+  </div>
+</div>
+
+<!-- Attack Warning Banner -->
+<div class="mitm-attack-warning" id="mitm-warning">
+  <div style="color:#ef4444;font-size:20px;flex-shrink:0;line-height:1;">⚠</div>
+  <div>
+    <div style="font-size:13px;font-weight:700;color:#f87171;margin-bottom:2px;">ARP Spoofing / MITM Attack in Progress</div>
+    <div style="font-size:11px;color:#fca5a5;line-height:1.5;" id="mitm-warning-text">
+      ARP cache poisoning activity detected on the local network.
+    </div>
+  </div>
+</div>
+
+<!-- STATUS BANNER -->
+<div class="mitm-status-banner state-secure" id="mitm-banner">
+  <div class="mitm-status-icon" id="banner-icon">🛡</div>
+  <div style="flex:1;">
+    <div class="mitm-status-title" id="banner-title" style="color:#4ade80;">NETWORK SECURE</div>
+    <div class="mitm-status-sub" id="banner-sub">Monitoring Active — No ARP Spoofing Detected</div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+    <span class="mitm-status-badge badge-secure" id="banner-badge">SECURE</span>
+    <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);" id="last-scan">Last scan: —</span>
+  </div>
+</div>
+
+<!-- STAT CARDS -->
+<div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">
+  <div class="stat-card">
+    <div class="stat-label">ARP Events</div>
+    <div class="stat-value" id="sc-total">0</div>
+    <div class="stat-sub">total detected</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">High Severity</div>
+    <div class="stat-value" id="sc-high">0</div>
+    <div class="stat-sub">MITM indicators</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-label">Suspicious</div>
+    <div class="stat-value" id="sc-suspicious">0</div>
+    <div class="stat-sub">ARP anomalies</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Protection</div>
+    <div class="stat-value" id="sc-protection" style="font-size:14px;padding-top:4px;">ACTIVE</div>
+    <div class="stat-sub" id="sc-protection-sub">Monitoring</div>
+  </div>
+</div>
+
+<!-- TWO-COLUMN: Attack Details + Timeline -->
+<div class="grid-2" style="margin-bottom:14px;">
+
+  <!-- Left: State-dependent detail panel -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Attack Details</span>
+      <span class="card-badge" id="details-badge">SECURE</span>
+    </div>
+
+    <!-- Secure view -->
+    <div id="view-secure">
+      <div style="text-align:center;padding:10px 0 14px;">
+        <div style="font-size:38px;margin-bottom:8px;">🛡</div>
+        <div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:4px;">Network Protected</div>
+        <div style="font-size:11px;color:var(--text-muted);">ARP spoofing detection is active. No MITM activity found.</div>
+      </div>
+      <div class="mitm-secure-grid">
+        <div class="mitm-secure-item">
+          <span class="msi-icon">✓</span>
+          <div><div class="msi-label">ARP Monitor</div><div class="msi-value">ACTIVE</div></div>
+        </div>
+        <div class="mitm-secure-item">
+          <span class="msi-icon">✓</span>
+          <div><div class="msi-label">Network</div><div class="msi-value">CLEAN</div></div>
+        </div>
+        <div class="mitm-secure-item">
+          <span class="msi-icon">✓</span>
+          <div><div class="msi-label">Threat Status</div><div class="msi-value">CLEAR</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attack view -->
+    <div id="view-attack" style="display:none;">
+      <div class="mitm-detail-grid" style="margin-bottom:12px;">
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Detection Time</div>
+          <div class="mitm-detail-value" id="dd-time">—</div>
+        </div>
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Attack Type</div>
+          <div class="mitm-detail-value" id="dd-type" style="color:#f87171;">—</div>
+        </div>
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Source IP</div>
+          <div class="mitm-detail-value" id="dd-src-ip" style="color:#fca5a5;">—</div>
+        </div>
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Source MAC</div>
+          <div class="mitm-detail-value" id="dd-src-mac" style="font-size:11px;">—</div>
+        </div>
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Threat Level</div>
+          <div class="mitm-detail-value" id="dd-severity" style="color:#ef4444;">—</div>
+        </div>
+        <div class="mitm-detail-cell">
+          <div class="mitm-detail-label">Current Status</div>
+          <div class="mitm-detail-value" id="dd-status" style="color:#ef4444;">ACTIVE</div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Details</div>
+        <div id="dd-msg" style="font-size:11px;color:#fca5a5;background:rgba(239,68,68,.06);
+             border:1px solid rgba(239,68,68,.15);border-radius:6px;padding:8px 10px;line-height:1.5;">—</div>
+      </div>
+      <button id="btn-block" onclick="blockAttacker()"
+        style="width:100%;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);
+               color:#f87171;padding:9px;border-radius:6px;cursor:pointer;
+               font-size:12px;font-weight:700;transition:all .2s;">
+        ⛔ Block Attacker IP
+      </button>
+    </div>
+
+    <!-- Blocked/Mitigated view -->
+    <div id="view-blocked" style="display:none;">
+      <div style="text-align:center;padding:10px 0 14px;">
+        <div style="font-size:38px;margin-bottom:8px;">✓</div>
+        <div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:10px;">Threat Mitigated</div>
+        <div style="display:flex;flex-direction:column;gap:6px;text-align:left;max-width:220px;margin:0 auto;">
+          <div style="font-size:11px;color:#4ade80;">✓ Attacker Blocked</div>
+          <div style="font-size:11px;color:#4ade80;">✓ Attack Mitigated</div>
+          <div style="font-size:11px;color:#4ade80;">✓ Network Restored</div>
+          <div style="font-size:11px;color:#4ade80;">✓ Monitoring Active</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Event Timeline -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Event Timeline</span>
+      <span class="card-badge" id="timeline-count">0 events</span>
+    </div>
+    <div id="mitm-timeline" class="mitm-timeline">
+      <div class="empty-state" style="padding:20px;">No events recorded. Network is clean.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FULL EVENTS TABLE -->
+<div class="card" id="mitm-events-section">
+  <div class="card-header">
+    <span class="card-title">ARP / MITM Event Log</span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="card-badge" id="events-count">0</span>
+      <span class="pill pill-normal" id="events-pill" style="font-size:9px;">CLEAN</span>
+    </div>
+  </div>
+
+  <div id="events-empty" class="empty-state" style="padding:24px;">
+    No ARP anomalies detected. LAN appears clean and no MITM activity has been observed.
+  </div>
+
+  <div id="events-table-wrap" style="display:none;">
+    <div class="table-wrap">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Source IP</th>
+            <th>Source MAC</th>
+            <th>Attack Type</th>
+            <th>Details</th>
+            <th>Severity</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="events-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const MS = { state:'secure', attackerIp:null, toastShown:false };
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── State transitions ──────────────────────────────────────────────────────
+function setState(newState, events) {
+  const changed = newState !== MS.state;
+  const prev    = MS.state;
+  MS.state      = newState;
+
+  const banner = document.getElementById('mitm-banner');
+  const icon   = document.getElementById('banner-icon');
+  const title  = document.getElementById('banner-title');
+  const sub    = document.getElementById('banner-sub');
+  const badge  = document.getElementById('banner-badge');
+  const warn   = document.getElementById('mitm-warning');
+  const scProt = document.getElementById('sc-protection');
+  const scSub  = document.getElementById('sc-protection-sub');
+  const detBadge = document.getElementById('details-badge');
+
+  banner.classList.remove('state-secure','state-suspicious','state-attack','state-blocked');
+  banner.classList.add('state-' + newState);
+  badge.className = 'mitm-status-badge';
+
+  const STATE_MAP = {
+    secure:     { icon:'🛡',  titleTxt:'NETWORK SECURE',          titleColor:'#4ade80', subTxt:'Monitoring Active — No ARP Spoofing Detected',      badgeTxt:'SECURE',       badgeCls:'badge-secure',     protect:'ACTIVE',  protSub:'Monitoring' },
+    suspicious: { icon:'⚠',   titleTxt:'SUSPICIOUS ARP ACTIVITY', titleColor:'#fbbf24', subTxt:'Unusual ARP patterns detected — monitoring closely', badgeTxt:'SUSPICIOUS',   badgeCls:'badge-suspicious', protect:'ALERT',   protSub:'Investigating' },
+    attack:     { icon:'🚨',  titleTxt:'MITM ATTACK DETECTED',    titleColor:'#f87171', subTxt:'ARP Spoofing Identified — Network Under Attack',     badgeTxt:'UNDER ATTACK', badgeCls:'badge-attack',     protect:'ATTACK',  protSub:'Under Attack' },
+    blocked:    { icon:'✓',   titleTxt:'THREAT BLOCKED',          titleColor:'#4ade80', subTxt:'Attack Mitigated — Network Restored — Monitoring Active', badgeTxt:'MITIGATED', badgeCls:'badge-blocked', protect:'BLOCKED', protSub:'Mitigated' },
+  };
+
+  const S = STATE_MAP[newState] || STATE_MAP.secure;
+  icon.textContent  = S.icon;
+  title.textContent = S.titleTxt;
+  title.style.color = S.titleColor;
+  sub.textContent   = S.subTxt;
+  badge.textContent = S.badgeTxt;
+  badge.classList.add(S.badgeCls);
+  scProt.textContent     = S.protect;
+  scProt.style.color     = S.titleColor;
+  scSub.textContent      = S.protSub;
+  detBadge.textContent   = S.badgeTxt;
+
+  if (newState === 'attack') {
+    warn.classList.add('visible');
+    const evt = events[0];
+    if (evt) {
+      MS.attackerIp = evt.src_ip;
+      document.getElementById('mitm-warning-text').textContent =
+        `ARP Spoofing from ${esc(evt.src_ip||'unknown')} — ${esc(evt.attack_type||'ARP Cache Poisoning')} detected at ${esc(evt.time||'—')}`;
+      fillAttackDetail(evt);
+    }
+    showView('attack');
+    if (changed && prev !== 'attack' && !MS.toastShown) {
+      MS.toastShown = true;
+      showMitmToast(events[0]);
+    }
+  } else if (newState === 'suspicious') {
+    warn.classList.remove('visible');
+    if (events[0]) fillAttackDetail(events[0]);
+    showView('attack');
+  } else if (newState === 'blocked') {
+    warn.classList.remove('visible');
+    showView('blocked');
+  } else {
+    warn.classList.remove('visible');
+    showView('secure');
+    if (newState === 'secure') MS.toastShown = false;
+  }
+}
+
+function showView(which) {
+  ['secure','attack','blocked'].forEach(v => {
+    document.getElementById('view-' + v).style.display = (v === which) ? 'block' : 'none';
+  });
+}
+
+function fillAttackDetail(evt) {
+  document.getElementById('dd-time').textContent    = evt.time       || '—';
+  document.getElementById('dd-type').textContent    = evt.attack_type || 'ARP Spoofing';
+  document.getElementById('dd-src-ip').textContent  = evt.src_ip     || '—';
+  document.getElementById('dd-src-mac').textContent = evt.src_mac    || '—';
+  document.getElementById('dd-severity').textContent = evt.severity  || '—';
+  document.getElementById('dd-msg').textContent      = evt.msg       || '';
+  document.getElementById('dd-status').textContent   = 'ACTIVE';
+  document.getElementById('dd-status').style.color   = '#ef4444';
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showMitmToast(evt) {
+  const toast  = document.getElementById('mitm-toast');
+  const detail = document.getElementById('toast-detail');
+  if (evt) {
+    detail.innerHTML = `ARP Spoofing from <strong style="color:#f87171;font-family:monospace;">${esc(evt.src_ip||'unknown')}</strong>.<br>Type: ${esc(evt.attack_type||'ARP Cache Poisoning')}<br>Immediate investigation recommended.`;
+  }
+  toast.classList.remove('out');
+  toast.classList.add('visible');
+  setTimeout(dismissToast, 12000);
+}
+
+function dismissToast() {
+  const toast = document.getElementById('mitm-toast');
+  toast.classList.add('out');
+  setTimeout(() => { toast.classList.remove('visible','out'); }, 300);
+}
+
+// ── Timeline renderer ──────────────────────────────────────────────────────
+function renderTimeline(events) {
+  const el = document.getElementById('mitm-timeline');
+  document.getElementById('timeline-count').textContent =
+    events.length + ' event' + (events.length === 1 ? '' : 's');
+
+  if (!events.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px;">No events recorded. Network is clean.</div>';
+    return;
+  }
+
+  el.innerHTML = events.slice(0, 15).map(e => {
+    const isHigh  = e.severity === 'HIGH';
+    const dot     = isHigh ? '#ef4444' : '#fbbf24';
+    const label   = isHigh
+      ? `MITM Attack — ${esc(e.attack_type||'ARP Spoofing')} from ${esc(e.src_ip||'unknown')}`
+      : `Suspicious ARP — ${esc(e.attack_type||'ARP Anomaly')} from ${esc(e.src_ip||'unknown')}`;
+    return `<div class="mitm-tl-item">
+      <div class="mitm-tl-dot" style="background:${dot};box-shadow:0 0 6px ${dot}66;"></div>
+      <div class="mitm-tl-time">${esc(e.time||'—')}</div>
+      <div class="mitm-tl-text">${label}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Events table renderer ──────────────────────────────────────────────────
+function renderTable(events) {
+  document.getElementById('events-count').textContent = events.length;
+  const empty = document.getElementById('events-empty');
+  const wrap  = document.getElementById('events-table-wrap');
+  const pill  = document.getElementById('events-pill');
+
+  if (!events.length) {
+    pill.className = 'pill pill-normal'; pill.textContent = 'CLEAN';
+    empty.style.display = 'block'; wrap.style.display = 'none';
+    return;
+  }
+
+  const hasHigh = events.some(e => e.severity === 'HIGH');
+  pill.className = 'pill ' + (hasHigh ? 'pill-attack' : 'pill-medium');
+  pill.textContent = hasHigh ? 'MITM DETECTED' : 'SUSPICIOUS';
+  empty.style.display = 'none'; wrap.style.display = 'block';
+
+  document.getElementById('events-tbody').innerHTML = events.slice(0, 30).map(e => `
+    <tr>
+      <td class="mono">${esc(e.time||'—')}</td>
+      <td class="mono">${esc(e.src_ip||'—')}</td>
+      <td class="mono" style="font-size:10px;">${esc(e.src_mac||'—')}</td>
+      <td><span style="color:${e.severity==='HIGH'?'#ef4444':'#fbbf24'};font-size:11px;font-weight:600;">${esc(e.attack_type||'—')}</span></td>
+      <td style="font-size:11px;color:#8a8880;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${esc(e.msg||'')}">${esc(e.msg||'')}</td>
+      <td><span class="pill ${e.severity==='HIGH'?'pill-attack':'pill-medium'}">${esc(e.severity||'—')}</span></td>
+      <td><button class="btn btn-block" style="font-size:10px;padding:2px 8px;"
+            onclick="blockIP('${esc(e.src_ip||'')}')">Block</button></td>
+    </tr>`).join('');
+}
+
+// ── Block actions ──────────────────────────────────────────────────────────
+async function blockAttacker() { if (MS.attackerIp) await blockIP(MS.attackerIp); }
+
+async function blockIP(ip) {
+  if (!ip) return;
+  try {
+    const res = await fetch('/api/firewall/block', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body:JSON.stringify({ip, reason:'MITM Detection — Manual Block'}),
+    });
+    const d = await res.json();
+    if (d.status === 'refused_private')   { showToast('Cannot block private IP', 'error'); return; }
+    if (d.status === 'refused_whitelist') { showToast('IP is whitelisted', 'error'); return; }
+    showToast(d.status === 'blocked' ? `${ip} blocked successfully` : `${ip}: ${d.status}`, 'success');
+    refresh();
+  } catch(e) { showToast('Block request failed', 'error'); }
+}
+
+// ── Main refresh ───────────────────────────────────────────────────────────
+async function refresh() {
+  try {
+    const [advRes, fwRes] = await Promise.all([
+      fetch('/api/advanced', { cache:'no-store' }),
+      fetch('/api/firewall',  { cache:'no-store' }),
+    ]);
+    if (!advRes.ok) return;
+
+    const adv    = await advRes.json();
+    const events = adv.arp_events || [];
+
+    document.getElementById('last-scan').textContent =
+      'Last scan: ' + (adv.timestamp || new Date().toLocaleTimeString());
+
+    const highCount = events.filter(e => e.severity === 'HIGH').length;
+    const suspCount = events.filter(e => e.severity !== 'HIGH').length;
+    document.getElementById('sc-total').textContent      = events.length;
+    document.getElementById('sc-high').textContent       = highCount;
+    document.getElementById('sc-suspicious').textContent = suspCount;
+
+    const hasHigh = events.some(e => e.severity === 'HIGH');
+    const hasMed  = events.some(e => e.severity !== 'HIGH');
+
+    // Derive attacker IPs directly from HIGH events (works on first load / page reload)
+    const highEvents = events.filter(e => e.severity === 'HIGH');
+    if (highEvents.length > 0) MS.attackerIp = highEvents[0].src_ip;
+
+    // Cool-down: SECURE when every HIGH-severity src_ip is in the firewall block list
+    let allHighBlocked = false;
+    if (hasHigh && fwRes.ok) {
+      const fw = await fwRes.json();
+      const blocked = new Set((fw.blocked || []).map(b => b.ip));
+      allHighBlocked = highEvents.every(e => blocked.has(e.src_ip));
+    }
+
+    if      (hasHigh && !allHighBlocked) setState('attack', events);
+    else if (!allHighBlocked && hasMed)  setState('suspicious', events);
+    else                                 setState('secure', events);
+
+    renderTimeline(events);
+    renderTable(events);
+  } catch(e) { /* silent */ }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+{% endblock %}

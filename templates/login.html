@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOC Platform — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <noscript><style>#soc-startup{display:none!important}#login-wrapper{opacity:1!important;pointer-events:auto!important}</style></noscript>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     CINEMATIC STARTUP SEQUENCE  (plays once per browser session)
+═══════════════════════════════════════════════════════════ -->
+<div id="soc-startup" class="soc-startup" role="presentation" aria-hidden="true">
+
+  <!-- ── Phase 1 · System Initialization ── -->
+  <div class="sp-phase" id="sp-init">
+    <div class="sp-wordmark">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      SOC PLATFORM
+    </div>
+
+    <div class="sp-init-lines">
+      <div class="sp-line" style="--n:0"><span class="sp-caret">›</span> Initializing Security Operations Center</div>
+      <div class="sp-line" style="--n:1"><span class="sp-caret">›</span> Loading Threat Intelligence Database</div>
+      <div class="sp-line" style="--n:2"><span class="sp-caret">›</span> Verifying Security Modules</div>
+      <div class="sp-line" style="--n:3"><span class="sp-caret">›</span> Establishing Secure Connection</div>
+    </div>
+
+    <div class="sp-bar"><div class="sp-bar-fill"></div></div>
+  </div>
+
+  <!-- ── Phase 2 · Cyber Analyst Reveal ── -->
+  <div class="sp-phase sp-hidden" id="sp-operative">
+    <div class="sp-op-wrap">
+
+      <svg class="sp-op-svg" viewBox="0 0 200 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Head -->
+        <circle cx="100" cy="50" r="24" stroke="#c8c4be" stroke-width="1.5" opacity=".9"/>
+        <!-- Eyes (minimal marks) -->
+        <line x1="89" y1="47" x2="93" y2="47" stroke="#c8c4be" stroke-width="1.5" stroke-linecap="round" opacity=".5"/>
+        <line x1="107" y1="47" x2="111" y2="47" stroke="#c8c4be" stroke-width="1.5" stroke-linecap="round" opacity=".5"/>
+        <!-- Neck -->
+        <line x1="100" y1="74" x2="100" y2="85" stroke="#c8c4be" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+        <!-- Jacket body -->
+        <path d="M46 103 L58 84 L100 93 L142 84 L154 103 L148 178 L52 178 Z"
+              stroke="#c8c4be" stroke-width="1.5" stroke-linejoin="round" opacity=".85"/>
+        <!-- Collar detail -->
+        <path d="M58 84 L80 103 L100 93 L120 103 L142 84"
+              stroke="#c8c4be" stroke-width="1" opacity=".3"/>
+        <!-- Arms -->
+        <path d="M46 103 L28 157" stroke="#c8c4be" stroke-width="1.5" stroke-linecap="round" opacity=".75"/>
+        <path d="M154 103 L172 157" stroke="#c8c4be" stroke-width="1.5" stroke-linecap="round" opacity=".75"/>
+        <!-- Hands (ellipses suggesting fingers on keyboard) -->
+        <ellipse cx="50" cy="188" rx="14" ry="7" stroke="#c8c4be" stroke-width="1" opacity=".45"/>
+        <ellipse cx="150" cy="188" rx="14" ry="7" stroke="#c8c4be" stroke-width="1" opacity=".45"/>
+        <!-- Keyboard surface -->
+        <rect x="22" y="196" width="156" height="9" rx="3" stroke="#c8c4be" stroke-width=".8" opacity=".25"/>
+        <!-- Desk edge -->
+        <line x1="5" y1="209" x2="195" y2="209" stroke="#c8c4be" stroke-width=".8" opacity=".15"/>
+        <!-- Left monitor -->
+        <rect x="4" y="136" width="66" height="46" rx="2" stroke="#c8c4be" stroke-width=".8" opacity=".25"/>
+        <line x1="10" y1="146" x2="64" y2="146" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="10" y1="154" x2="52" y2="154" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="10" y1="162" x2="58" y2="162" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="10" y1="170" x2="44" y2="170" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <!-- Right monitor -->
+        <rect x="130" y="136" width="66" height="46" rx="2" stroke="#c8c4be" stroke-width=".8" opacity=".25"/>
+        <line x1="136" y1="146" x2="190" y2="146" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="136" y1="154" x2="178" y2="154" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="136" y1="162" x2="183" y2="162" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+        <line x1="136" y1="170" x2="166" y2="170" stroke="#c8c4be" stroke-width=".5" opacity=".15"/>
+      </svg>
+
+      <div class="sp-op-label">CYBER ANALYST</div>
+      <div class="sp-op-sub">Elite Security Operations</div>
+    </div>
+  </div>
+
+  <!-- ── Phase 3 · Security Verification ── -->
+  <div class="sp-phase sp-hidden" id="sp-scan">
+    <div class="sp-scan-head">SYSTEM VERIFICATION</div>
+    <div class="sp-scan-list">
+      <div class="sp-scan-row" style="--n:0">
+        <span class="sp-scan-key">Threat Detection Engine</span>
+        <span class="sp-scan-dots"></span>
+        <span class="sp-scan-val sp-ok">ONLINE</span>
+      </div>
+      <div class="sp-scan-row" style="--n:1">
+        <span class="sp-scan-key">Network Activity Monitor</span>
+        <span class="sp-scan-dots"></span>
+        <span class="sp-scan-val sp-ok">ACTIVE</span>
+      </div>
+      <div class="sp-scan-row" style="--n:2">
+        <span class="sp-scan-key">Intelligence Modules</span>
+        <span class="sp-scan-dots"></span>
+        <span class="sp-scan-val sp-ok">LOADED</span>
+      </div>
+      <div class="sp-scan-row" style="--n:3">
+        <span class="sp-scan-key">Security Status</span>
+        <span class="sp-scan-dots"></span>
+        <span class="sp-scan-val sp-verified">VERIFIED ✓</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Phase 4 · Access Gateway ── -->
+  <div class="sp-phase sp-hidden" id="sp-gateway">
+    <div class="sp-gw">
+      <div class="sp-gw-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#f0ede8" stroke-width="1.3">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div class="sp-gw-name">SOC PLATFORM</div>
+      <div class="sp-gw-rule"></div>
+      <div class="sp-gw-auth">SECURE ACCESS AUTHORIZED</div>
+    </div>
+  </div>
+
+  <button class="sp-skip-btn" id="sp-skip-btn">Skip</button>
+</div>
+
+<!-- ═══════════════════════════════════════
+     LOGIN PAGE  (revealed after startup)
+═══════════════════════════════════════ -->
+<div class="page-wrapper" id="login-wrapper">
+  <div class="auth-card">
+
+    <div class="auth-header">
+      <div class="auth-logo">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <h1>SOC Platform</h1>
+      <p>Security Operations Center — Authorized access only.</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-messages">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <div class="form-group">
+        <label for="identifier">Email or Username</label>
+        <input type="text" id="identifier" name="identifier"
+               placeholder="analyst@soc.local" autocomplete="username" required autofocus />
+      </div>
+
+      <div class="form-group">
+        <label for="password" style="display:flex;justify-content:space-between;align-items:center;">
+          Password
+          <a class="forgot-link" href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+        </label>
+        <div class="input-wrapper">
+          <input type="password" id="password" name="password"
+                 placeholder="••••••••" autocomplete="current-password" required />
+          <button type="button" class="pwd-toggle" onclick="togglePwd()" aria-label="Toggle password visibility">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="remember_me" name="remember_me" />
+          <label for="remember_me">Remember me for 30 days</label>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Sign In</button>
+    </form>
+
+    <div class="auth-footer">
+      No account? <a href="{{ url_for('auth.register') }}">Request access</a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function togglePwd() {
+  const i = document.getElementById('password');
+  i.type = i.type === 'password' ? 'text' : 'password';
+}
+
+/* ── Startup Sequence ─────────────────────────────────────────────────────── */
+(function () {
+  const overlay = document.getElementById('soc-startup');
+  const wrapper = document.getElementById('login-wrapper');
+  if (!overlay || !wrapper) return;
+
+  const PHASES   = ['sp-init', 'sp-operative', 'sp-scan', 'sp-gateway'];
+  const DURATION = [1550, 950, 1100, 720];   // ms each phase stays visible
+  let idx = 0, done = false, timer = null;
+
+  /* Skip if seen this session */
+  if (sessionStorage.getItem('soc_seen')) {
+    overlay.style.display = 'none';
+    wrapper.classList.add('sp-ready');
+    return;
+  }
+
+  function activate(i) {
+    PHASES.forEach(function (id, j) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (j === i) {
+        el.classList.remove('sp-hidden');
+        void el.offsetWidth;          /* force reflow so animations re-trigger */
+        el.classList.add('sp-active');
+      } else {
+        el.classList.remove('sp-active');
+        el.classList.add('sp-hidden');
+      }
+    });
+  }
+
+  function advance() {
+    if (done) return;
+    if (idx >= PHASES.length) { finish(); return; }
+    activate(idx);
+    var dur = DURATION[idx];
+    idx++;
+    timer = setTimeout(advance, dur);
+  }
+
+  function finish() {
+    if (done) return;
+    done = true;
+    if (timer) clearTimeout(timer);
+    sessionStorage.setItem('soc_seen', '1');
+    overlay.classList.add('sp-out');
+    setTimeout(function () {
+      overlay.style.display = 'none';
+      wrapper.classList.add('sp-ready');
+    }, 480);
+  }
+
+  /* Public skip handle (for button onclick) */
+  window._socSkip = finish;
+
+  document.getElementById('sp-skip-btn').addEventListener('click', finish);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') finish();
+  });
+
+  /* Start after a brief pause so fonts render */
+  setTimeout(advance, 120);
+})();
+</script>
+</body>
+</html>

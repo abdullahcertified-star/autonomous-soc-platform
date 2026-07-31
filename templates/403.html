@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Access Denied | SOC Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='soc.css') }}" />
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .err-box {
+      text-align:center; padding:48px 40px;
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:16px; max-width:440px; width:90%;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+    }
+    .err-icon {
+      width:64px; height:64px; border-radius:50%;
+      background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3);
+      display:flex; align-items:center; justify-content:center;
+      margin:0 auto 20px;
+    }
+    .err-icon svg { width:28px; height:28px; stroke:#f87171; fill:none;
+                    stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+    .err-code  { font-size:11px; font-weight:700; letter-spacing:.1em;
+                 text-transform:uppercase; color:var(--text-muted); margin-bottom:10px; }
+    .err-title { font-size:20px; font-weight:700; color:var(--text); margin-bottom:10px; }
+    .err-msg   { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:28px; }
+    .err-actions { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="err-box">
+    <div class="err-icon">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+      </svg>
+    </div>
+    <div class="err-code">Error 403</div>
+    <div class="err-title">Access Denied</div>
+    <div class="err-msg">
+      You don't have access to perform this action.<br>
+      Contact your administrator if you believe this is a mistake.
+    </div>
+    <div class="err-actions">
+      <a href="javascript:history.back()" class="btn btn-ghost">&#8592; Go Back</a>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">Dashboard</a>
+    </div>
+  </div>
+</body>
+</html>

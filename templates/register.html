@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOC Platform — Request Access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<div class="page-wrapper">
+  <div class="auth-card" style="max-width:460px;">
+
+    <div class="auth-header">
+      <div class="auth-logo">🛡</div>
+      <h1>SOC Platform</h1>
+      <p>Request access to the SOC platform.</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-messages">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('auth.register') }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username"
+               placeholder="analyst_01" value="{{ username or '' }}"
+               autocomplete="username" required maxlength="30" autofocus />
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email"
+               placeholder="analyst@soc.local" value="{{ email or '' }}"
+               autocomplete="email" required />
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="password" name="password"
+                 placeholder="••••••••" autocomplete="new-password"
+                 required oninput="checkStrength(this.value)" />
+          <button type="button" class="pwd-toggle" onclick="togglePwd('password', this)" aria-label="Toggle password">👁</button>
+        </div>
+        <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+        <div class="strength-label" id="strength-label"></div>
+        <div class="password-hints">
+          <span class="hint" id="h-len">8+ chars</span>
+          <span class="hint" id="h-upper">Uppercase</span>
+          <span class="hint" id="h-lower">Lowercase</span>
+          <span class="hint" id="h-digit">Digit</span>
+          <span class="hint" id="h-special">Special</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="confirm_password" name="confirm_password"
+                 placeholder="••••••••" autocomplete="new-password" required />
+          <button type="button" class="pwd-toggle" onclick="togglePwd('confirm_password', this)" aria-label="Toggle password">👁</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Access Level Request</label>
+        <div class="role-selector">
+
+          <label class="role-option">
+            <input type="radio" name="requested_role" value="standard_user"
+                   {% if not requested_role or requested_role == 'standard_user' %}checked{% endif %} />
+            <div class="role-card">
+              <div class="role-card-header">
+                <span class="role-icon">👁</span>
+                <strong>Standard User</strong>
+              </div>
+              <span class="role-desc">View-only: dashboards, logs, alerts and incidents</span>
+            </div>
+          </label>
+
+          <label class="role-option">
+            <input type="radio" name="requested_role" value="power_user"
+                   {% if requested_role == 'power_user' %}checked{% endif %} />
+            <div class="role-card">
+              <div class="role-card-header">
+                <span class="role-icon">⚡</span>
+                <strong>Power User</strong>
+              </div>
+              <span class="role-desc">SOC operations: cases, firewall, threat intel, reports</span>
+            </div>
+          </label>
+
+          <label class="role-option">
+            <input type="radio" name="requested_role" value="super_user"
+                   {% if requested_role == 'super_user' %}checked{% endif %} />
+            <div class="role-card">
+              <div class="role-card-header">
+                <span class="role-icon">🔑</span>
+                <strong>Super User</strong>
+              </div>
+              <span class="role-desc">Full control: settings, users, roles, full audit trail</span>
+            </div>
+          </label>
+
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Request Access</button>
+    </form>
+
+    <div class="auth-footer">
+      Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function togglePwd(id, btn) {
+  const input = document.getElementById(id);
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  btn.textContent = show ? '🙈' : '👁';
+}
+
+function checkStrength(pw) {
+  const checks = {
+    'h-len': pw.length >= 8, 'h-upper': /[A-Z]/.test(pw),
+    'h-lower': /[a-z]/.test(pw), 'h-digit': /\d/.test(pw),
+    'h-special': /[!@#$%^&*(),.?":{}|<>_\-]/.test(pw),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  for (const [id, met] of Object.entries(checks))
+    document.getElementById(id).classList.toggle('met', met);
+  const colors = ['#e05c5c','#e07c3c','#e0c45c','#8ec45c','#5cc98a'];
+  const labels = ['Very Weak','Weak','Fair','Good','Strong'];
+  document.getElementById('strength-fill').style.cssText =
+    `width:${score/5*100}%;background:${colors[score-1]||'#2a2d3a'}`;
+  document.getElementById('strength-label').textContent = pw.length ? labels[score-1]||'' : '';
+}
+</script>
+</body>
+</html>

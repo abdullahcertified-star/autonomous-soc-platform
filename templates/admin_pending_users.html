@@ -1,0 +1,318 @@
+{% extends 'base_soc.html' %}
+{% block title %}User Management{% endblock %}
+{% block page_title %}User Management{% endblock %}
+
+{% block content %}
+<style>
+  .rpill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:700; white-space:nowrap; }
+  .rpill-super    { background:rgba(239,68,68,.15);  color:#f87171; border:1px solid rgba(239,68,68,.3); }
+  .rpill-power    { background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.3); }
+  .rpill-standard { background:rgba(34,197,94,.12);  color:#4ade80; border:1px solid rgba(34,197,94,.25); }
+  .tag-you  { font-size:10px; color:var(--accent); background:rgba(200,196,190,.12); border:1px solid rgba(200,196,190,.25); border-radius:99px; padding:1px 6px; margin-left:5px; }
+  .tag-seed { font-size:10px; color:#8a8880; background:rgba(138,136,128,.12); border:1px solid rgba(138,136,128,.3); border-radius:99px; padding:1px 6px; margin-left:5px; }
+
+  .role-select { font-size:11px; padding:4px 8px; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:6px; outline:none; cursor:pointer; }
+  .role-select:focus { border-color:var(--accent); }
+
+  .btn-approve { background:rgba(34,197,94,.15);  color:#4ade80; border:1px solid rgba(34,197,94,.35); }
+  .btn-approve:hover { background:rgba(34,197,94,.28); }
+  .btn-reject  { background:rgba(239,68,68,.12);  color:#f87171; border:1px solid rgba(239,68,68,.3); }
+  .btn-reject:hover  { background:rgba(239,68,68,.25); }
+  .btn-save    { background:rgba(200,196,190,.10); color:var(--accent); border:1px solid rgba(200,196,190,.3); }
+  .btn-save:hover    { background:rgba(200,196,190,.2); }
+  .btn-delete  { background:rgba(239,68,68,.1);   color:#f87171; border:1px solid rgba(239,68,68,.25); }
+  .btn-delete:hover  { background:rgba(239,68,68,.22); }
+
+  .action-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .no-change  { font-size:11px; color:var(--text-muted); font-style:italic; }
+  .empty-state { text-align:center; padding:28px 16px; color:var(--text-muted); font-size:12px; border:1px dashed var(--border); border-radius:var(--radius); }
+
+  /* ── Modal ── */
+  .modal-backdrop {
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(0,0,0,.65); backdrop-filter:blur(3px);
+    align-items:center; justify-content:center;
+  }
+  .modal-backdrop.open { display:flex; }
+  .modal-box {
+    background:var(--bg2); border:1px solid var(--border2);
+    border-radius:12px; width:100%; max-width:480px;
+    box-shadow:0 20px 60px rgba(0,0,0,.6); overflow:hidden;
+  }
+  .modal-head {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px; border-bottom:1px solid var(--border);
+  }
+  .modal-head h3 { font-size:13px; font-weight:700; color:var(--text); }
+  .modal-close {
+    background:none; border:none; color:var(--text-muted);
+    cursor:pointer; font-size:18px; line-height:1; padding:0 4px;
+    transition:color .15s;
+  }
+  .modal-close:hover { color:var(--text); }
+  .modal-body { padding:18px; display:flex; flex-direction:column; gap:14px; }
+  .modal-foot { padding:14px 18px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+  .pw-hint { font-size:10px; color:var(--text-muted); margin-top:3px; }
+</style>
+
+<!-- flash messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div style="margin-bottom:14px;">
+      {% for cat, msg in messages %}
+        <div style="padding:10px 14px;border-radius:var(--radius);margin-bottom:6px;font-size:12px;font-weight:500;
+          {% if cat == 'success' %}background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#4ade80;
+          {% elif cat == 'error' %}background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;
+          {% else %}background:rgba(200,196,190,.10);border:1px solid rgba(200,196,190,.25);color:var(--accent);{% endif %}">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<!-- stat row -->
+<div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+  <div class="stat-card yellow">
+    <div class="stat-label">Pending Approval</div>
+    <div class="stat-value">{{ pending | length }}</div>
+    <div class="stat-sub">awaiting review</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Active Users</div>
+    <div class="stat-value">{{ active | length }}</div>
+    <div class="stat-sub">approved accounts</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Total</div>
+    <div class="stat-value">{{ (pending | length) + (active | length) }}</div>
+    <div class="stat-sub">all accounts</div>
+  </div>
+</div>
+
+<!-- ════ CARD 1 — PENDING ════ -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <div class="card-title">Pending Access Requests</div>
+    {% if pending %}
+      <span class="card-badge" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3);">{{ pending|length }} waiting</span>
+    {% endif %}
+  </div>
+
+  {% if pending %}
+  <div class="table-wrap">
+    <table class="soc-table">
+      <thead>
+        <tr><th>Username</th><th>Email</th><th>Requested As</th><th>Registered</th><th>Grant As</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for u in pending %}
+        {% set rl = u.requested_role or 'standard_user' %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td style="color:var(--text-muted);font-size:11px;">{{ u.email }}</td>
+          <td>
+            {% if rl=='super_user' %}<span class="rpill rpill-super">Super User</span>
+            {% elif rl=='power_user' %}<span class="rpill rpill-power">Power User</span>
+            {% else %}<span class="rpill rpill-standard">Standard User</span>{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:11px;">{{ u.created_at.strftime('%d %b %Y %H:%M') if u.created_at else '—' }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('settings.admin_approve_user', user_id=u.id) }}" id="af-{{ u.id }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <select name="role" class="role-select">
+                <option value="standard_user" {% if rl=='standard_user' %}selected{% endif %}>Standard User</option>
+                <option value="power_user"    {% if rl=='power_user'    %}selected{% endif %}>Power User</option>
+                <option value="super_user"    {% if rl=='super_user'    %}selected{% endif %}>Super User</option>
+              </select>
+          </td>
+          <td>
+              <div class="action-row">
+                <button type="submit" form="af-{{ u.id }}" class="btn btn-approve">✓ Approve</button>
+              </div>
+            </form>
+            <form method="POST" action="{{ url_for('settings.admin_reject_user', user_id=u.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Permanently reject {{ u.username|e }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button type="submit" class="btn btn-reject">✗ Reject</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">✅ No pending access requests.</div>
+  {% endif %}
+</div>
+
+<!-- ════ CARD 2 — ACTIVE USERS ════ -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Active Users</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="card-badge">{{ active|length }} accounts</span>
+      <button class="btn btn-primary" onclick="openCreateModal()" style="font-size:11px;padding:5px 12px;">+ Create User</button>
+    </div>
+  </div>
+
+  {% if active %}
+  <div class="table-wrap" style="max-height:500px;">
+    <table class="soc-table">
+      <thead>
+        <tr><th>Username</th><th>Email</th><th>Access Level</th><th>Since</th><th>Change To</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for u in active %}
+        {% set cur_label = label_map.get(u.role, 'standard_user') %}
+        <tr>
+          <td>
+            <strong>{{ u.username }}</strong>
+            {% if u.id == current_user.id %}<span class="tag-you">you</span>{% endif %}
+            {% if u.username == 'seed_admin' %}<span class="tag-seed">seed</span>{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:11px;">{{ u.email }}</td>
+          <td>
+            {% if cur_label=='super_user' %}<span class="rpill rpill-super">Super User</span>
+            {% elif cur_label=='power_user' %}<span class="rpill rpill-power">Power User</span>
+            {% else %}<span class="rpill rpill-standard">Standard User</span>{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:11px;">{{ u.created_at.strftime('%d %b %Y') if u.created_at else '—' }}</td>
+
+          {% if u.id == current_user.id %}
+          <td colspan="2"><span class="no-change">Cannot modify your own account</span></td>
+          {% else %}
+          <td>
+            <form method="POST" action="{{ url_for('settings.admin_change_role', user_id=u.id) }}" id="cr-{{ u.id }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <select name="role" class="role-select">
+                <option value="standard_user" {% if cur_label=='standard_user' %}selected{% endif %}>Standard User</option>
+                <option value="power_user"    {% if cur_label=='power_user'    %}selected{% endif %}>Power User</option>
+                <option value="super_user"    {% if cur_label=='super_user'    %}selected{% endif %}>Super User</option>
+              </select>
+            </form>
+          </td>
+          <td>
+            {% if u.username != 'seed_admin' %}
+            <form method="POST" action="{{ url_for('settings.admin_delete_user', user_id=u.id) }}"
+                  id="del-{{ u.id }}" style="display:none;"
+                  onsubmit="return confirm('Permanently delete {{ u.username|e }}? This cannot be undone.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            </form>
+            {% endif %}
+            <div class="action-row">
+              <button type="submit" form="cr-{{ u.id }}" class="btn btn-save">Save</button>
+              {% if u.username != 'seed_admin' %}
+              <button type="submit" form="del-{{ u.id }}" class="btn btn-delete">Delete</button>
+              {% endif %}
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">👥 No active users yet.</div>
+  {% endif %}
+</div>
+
+<!-- ════ CREATE USER MODAL ════ -->
+<div class="modal-backdrop" id="create-modal" onclick="closeCreateModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3>Create New User</h3>
+      <button class="modal-close" onclick="closeCreateModal()">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('settings.admin_create_user') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="modal-body">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input type="text" name="username" class="form-input" placeholder="analyst_01" required maxlength="30" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" class="form-input" placeholder="user@soc.local" required autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" id="modal-pwd" class="form-input" placeholder="••••••••" required autocomplete="new-password" />
+          <div class="pw-hint">Min 8 chars · uppercase · lowercase · digit · special char</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Access Level</label>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 12px;border:1px solid var(--border);border-radius:8px;transition:border-color .15s;" id="rl-standard">
+              <input type="radio" name="role" value="standard_user" checked onchange="highlightRole()"
+                     style="accent-color:var(--green);" />
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);">Standard User</div>
+                <div style="font-size:10px;color:var(--text-muted);">View-only: dashboards, logs, alerts, incidents</div>
+              </div>
+            </label>
+
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 12px;border:1px solid var(--border);border-radius:8px;transition:border-color .15s;" id="rl-power">
+              <input type="radio" name="role" value="power_user" onchange="highlightRole()"
+                     style="accent-color:var(--yellow);" />
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);">Power User</div>
+                <div style="font-size:10px;color:var(--text-muted);">SOC ops: cases, firewall, threat intel, reports</div>
+              </div>
+            </label>
+
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 12px;border:1px solid var(--border);border-radius:8px;transition:border-color .15s;" id="rl-super">
+              <input type="radio" name="role" value="super_user" onchange="highlightRole()"
+                     style="accent-color:var(--red);" />
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);">Super User</div>
+                <div style="font-size:10px;color:var(--text-muted);">Full control: settings, users, roles, audit trail</div>
+              </div>
+            </label>
+
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create User</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCreateModal() {
+  document.getElementById('create-modal').classList.add('open');
+  highlightRole();
+}
+function closeCreateModal(e) {
+  if (!e || e.target === document.getElementById('create-modal'))
+    document.getElementById('create-modal').classList.remove('open');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('create-modal').classList.remove('open');
+});
+function highlightRole() {
+  const map = { 'standard_user': ['rl-standard','var(--green)'], 'power_user': ['rl-power','var(--yellow)'], 'super_user': ['rl-super','var(--red)'] };
+  const checked = document.querySelector('input[name="role"]:checked');
+  if (!checked) return;
+  for (const [val, [id, color]] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    el.style.borderColor = (checked.value === val) ? color : 'var(--border)';
+    el.style.background  = (checked.value === val) ? color.replace(')', ',.08)').replace('var(', 'rgba(').replace('--green','34,197,94').replace('--yellow','234,179,8').replace('--red','239,68,68') : '';
+  }
+}
+</script>
+{% endblock %}

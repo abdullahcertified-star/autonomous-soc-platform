@@ -1,0 +1,280 @@
+{% extends "base_soc.html" %}
+{% block title %}Log Recycle Bin{% endblock %}
+{% block page_title %}Log Recycle Bin{% endblock %}
+
+{% block content %}
+<style>
+.trash-table-wrap { overflow-x:auto; }
+table.trash-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+table.trash-tbl th { padding:10px 12px; text-align:left; color:var(--text-muted);
+                     border-bottom:1px solid var(--border); font-weight:600; font-size:11px;
+                     text-transform:uppercase; white-space:nowrap; }
+table.trash-tbl td { padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+table.trash-tbl tr:hover td { background:rgba(239,68,68,.04); }
+
+.confirm-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;
+                   display:flex;align-items:center;justify-content:center; }
+.confirm-box { background:#0f0f0f;border:1px solid #1e1e1e;border-radius:14px;
+               padding:28px 30px;width:420px;max-width:95vw;text-align:center; }
+.confirm-box h3 { font-size:15px;font-weight:700;margin-bottom:10px;color:#f87171; }
+.confirm-box p  { font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6; }
+.confirm-actions { display:flex;gap:10px;justify-content:center; }
+</style>
+
+<!-- Toolbar -->
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+  <a href="/logs" class="btn btn-secondary"
+     style="display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:7px 14px;text-decoration:none;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Back to Logs
+  </a>
+  <span style="font-size:13px;color:var(--text-muted);">
+    Deleted log entries — restore them or permanently remove them.
+  </span>
+  <button onclick="emptyTrash()"
+    style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+           background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);color:#f87171;
+           border-radius:8px;padding:7px 16px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
+    onmouseover="this.style.background='rgba(239,68,68,.25)'"
+    onmouseout="this.style.background='rgba(239,68,68,.1)'">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Empty Trash
+  </button>
+</div>
+
+<!-- Table -->
+<div class="card" style="padding:0;overflow:hidden;">
+  <div class="trash-table-wrap">
+    <table class="trash-tbl">
+      <thead>
+        <tr>
+          <th>Deleted At</th>
+          <th>Timestamp</th>
+          <th>Type</th>
+          <th>Source IP</th>
+          <th>Severity</th>
+          <th>Message</th>
+          <th style="width:220px;text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="trash-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Confirm overlay -->
+<div id="confirm-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box">
+    <h3>Permanently Delete?</h3>
+    <p id="confirm-msg">This will permanently remove this log entry. Cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
+      <button id="confirm-ok"
+        style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.5);color:#f87171;
+               border-radius:8px;padding:8px 22px;cursor:pointer;font-weight:700;font-size:13px;">
+        Delete Forever
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _confirmCallback = null;
+
+function getCsrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function showToast(msg, type) {
+  const col = type === 'error' ? '#f87171' : '#4ade80';
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:#0f0f0f;border:1px solid ${col};color:${col};
+    border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;
+    box-shadow:0 4px 20px rgba(0,0,0,.5);transition:opacity .4s;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(), 400); }, 3000);
+}
+
+function typePill(type) {
+  const t = (type||'ALERT').toUpperCase();
+  if (t==='FIREWALL') return '<span class="pill pill-firewall">FIREWALL</span>';
+  if (t==='HONEYPOT') return '<span class="pill pill-honeypot">HONEYPOT</span>';
+  return '<span class="pill pill-low">ALERT</span>';
+}
+function sevPill(sev) {
+  const s = (sev||'').toUpperCase();
+  if (s==='HIGH')   return '<span class="pill pill-attack">HIGH</span>';
+  if (s==='MEDIUM') return '<span class="pill pill-medium">MEDIUM</span>';
+  return '<span class="pill pill-low">LOW</span>';
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  return new Date(s.endsWith('Z') ? s : s+'Z').toLocaleString('en-US', {hour12:true});
+}
+function timeAgo(s) {
+  if (!s) return '';
+  const diff = (Date.now() - new Date(s.endsWith('Z') ? s : s+'Z')) / 1000;
+  if (diff < 60)    return 'just now';
+  if (diff < 3600)  return Math.round(diff/60) + 'm ago';
+  if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+  return Math.round(diff/86400) + 'd ago';
+}
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Load trash ────────────────────────────────────────────────────────────────
+async function loadTrash() {
+  const tbody = document.getElementById('trash-tbody');
+  try {
+    const r = await fetch('/api/logs/trash');
+    const data = await r.json();
+    const logs = data.logs || [];
+
+    if (!logs.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="7" style="text-align:center;padding:60px;">
+          <div style="color:var(--text-muted);font-size:14px;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" style="display:block;margin:0 auto 12px;opacity:.3;">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+            Recycle bin is empty
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td style="font-size:11px;color:var(--text-muted);" title="${escHtml(fmtDate(l._deleted_at))}">
+          ${timeAgo(l._deleted_at)}
+        </td>
+        <td class="mono" style="font-size:10px;color:#3a3836;">${fmtDate(l.timestamp)}</td>
+        <td>${typePill(l.type)}</td>
+        <td class="mono" style="font-size:12px;">${escHtml(l.ip||'--')}</td>
+        <td>${sevPill(l.severity)}</td>
+        <td style="font-size:11px;color:#8a8880;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${escHtml(l.msg||'--')}
+        </td>
+        <td style="text-align:center;">
+          <div style="display:inline-flex;gap:6px;">
+            <button data-lid="${escHtml(l._id||'')}" onclick="restoreLog(this)"
+              style="display:inline-flex;align-items:center;gap:4px;
+                     background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#4ade80;
+                     border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;
+                     white-space:nowrap;transition:all .15s;"
+              onmouseover="this.style.background='rgba(34,197,94,.28)';this.style.borderColor='#4ade80'"
+              onmouseout="this.style.background='rgba(34,197,94,.12)';this.style.borderColor='rgba(34,197,94,.4)'">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+              </svg>
+              Restore
+            </button>
+            <button data-lid="${escHtml(l._id||'')}" data-msg="${escHtml((l.msg||'').slice(0,60))}"
+                    onclick="askDelete(this)"
+              style="display:inline-flex;align-items:center;gap:4px;
+                     background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+                     border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;
+                     white-space:nowrap;transition:all .15s;"
+              onmouseover="this.style.background='rgba(239,68,68,.28)';this.style.borderColor='#f87171'"
+              onmouseout="this.style.background='rgba(239,68,68,.12)';this.style.borderColor='rgba(239,68,68,.4)'">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              Delete Forever
+            </button>
+          </div>
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#f87171;">Failed to load trash</td></tr>';
+  }
+}
+
+// ── Restore ───────────────────────────────────────────────────────────────────
+async function restoreLog(btn) {
+  const lid = btn.dataset.lid;
+  btn.disabled = true; btn.textContent = 'Restoring…';
+  const r = await fetch(`/api/logs/trash/${encodeURIComponent(lid)}/restore`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCsrf() },
+  });
+  if (r.ok) { showToast('Log entry restored', 'success'); loadTrash(); }
+  else {
+    const d = await r.json().catch(()=>({}));
+    showToast(d.error || 'Restore failed', 'error');
+    btn.disabled = false; btn.textContent = 'Restore';
+  }
+}
+
+// ── Permanent delete ──────────────────────────────────────────────────────────
+function askDelete(btn) {
+  const lid = btn.dataset.lid;
+  const msg = btn.dataset.msg;
+  document.getElementById('confirm-msg').textContent =
+    `"${msg}…" will be permanently deleted. This cannot be undone.`;
+  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-ok').onclick = () => {
+    const cb = () => doDelete(lid);
+    closeConfirm();
+    cb();
+  };
+}
+
+async function doDelete(lid) {
+  const r = await fetch(`/api/logs/trash/${encodeURIComponent(lid)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRFToken': getCsrf() },
+  });
+  if (r.ok) { showToast('Permanently deleted', 'success'); loadTrash(); }
+  else {
+    const d = await r.json().catch(()=>({}));
+    showToast(d.error || 'Delete failed', 'error');
+  }
+}
+
+// ── Empty trash ───────────────────────────────────────────────────────────────
+async function emptyTrash() {
+  const r = await fetch('/api/logs/trash');
+  const data = await r.json();
+  const logs = data.logs || [];
+  if (!logs.length) { showToast('Recycle bin is already empty', 'success'); return; }
+  document.getElementById('confirm-msg').textContent =
+    `Permanently delete all ${logs.length} log entries. This cannot be undone.`;
+  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-ok').onclick = async () => {
+    closeConfirm();
+    let ok = 0, fail = 0;
+    for (const l of logs) {
+      const res = await fetch(`/api/logs/trash/${encodeURIComponent(l._id)}`, {
+        method: 'DELETE', headers: { 'X-CSRFToken': getCsrf() },
+      });
+      if (res.ok) ok++; else fail++;
+    }
+    showToast(`Emptied: ${ok} deleted${fail ? ', ' + fail + ' failed' : ''}`, fail ? 'error' : 'success');
+    loadTrash();
+  };
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').style.display = 'none';
+}
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('confirm-overlay')) closeConfirm();
+});
+
+loadTrash();
+</script>
+{% endblock %}

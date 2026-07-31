@@ -1,0 +1,300 @@
+{% extends "base_soc.html" %}
+{% block title %}Recycle Bin{% endblock %}
+{% block page_title %}Recycle Bin{% endblock %}
+
+{% block content %}
+<style>
+.trash-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+
+.trash-table-wrap { overflow-x:auto; }
+table.trash-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+table.trash-tbl th { padding:10px 12px; text-align:left; color:var(--text-muted);
+                     border-bottom:1px solid var(--border); font-weight:600; font-size:11px;
+                     text-transform:uppercase; white-space:nowrap; }
+table.trash-tbl td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+table.trash-tbl tr:hover td { background:rgba(239,68,68,.04); }
+
+.badge-sev { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+
+/* Confirm overlay */
+.confirm-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;
+                   display:flex;align-items:center;justify-content:center; }
+.confirm-box { background:#0f0f0f;border:1px solid #1e1e1e;border-radius:14px;
+               padding:28px 30px;width:420px;max-width:95vw;text-align:center; }
+.confirm-box h3 { font-size:15px;font-weight:700;margin-bottom:10px;color:#f87171; }
+.confirm-box p  { font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6; }
+.confirm-actions { display:flex;gap:10px;justify-content:center; }
+</style>
+
+<!-- Header bar -->
+<div class="trash-toolbar">
+  <a href="/cases" class="btn btn-secondary"
+     style="display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:7px 14px;text-decoration:none;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Back to Cases
+  </a>
+  <div style="font-size:13px;color:var(--text-muted);margin-left:4px;">
+    Deleted cases are kept here. Restore them or permanently remove them.
+  </div>
+  <button onclick="emptyTrash()"
+    style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+           background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);color:#f87171;
+           border-radius:8px;padding:7px 16px;cursor:pointer;font-size:12px;font-weight:600;
+           transition:all .15s;"
+    onmouseover="this.style.background='rgba(239,68,68,.25)'"
+    onmouseout="this.style.background='rgba(239,68,68,.1)'">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Empty Trash
+  </button>
+</div>
+
+<!-- Table -->
+<div class="card" style="padding:0;overflow:hidden;">
+  <div class="trash-table-wrap">
+    <table class="trash-tbl">
+      <thead>
+        <tr>
+          <th>Case ID</th>
+          <th>Title</th>
+          <th>Severity</th>
+          <th>Original Status</th>
+          <th>Deleted By</th>
+          <th>Deleted At</th>
+          <th style="width:200px;text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="trash-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Permanent delete confirm overlay -->
+<div id="confirm-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box">
+    <h3>Permanently Delete?</h3>
+    <p id="confirm-msg">This will permanently remove the case and all its notes. This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
+      <button id="confirm-ok"
+        style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.5);color:#f87171;
+               border-radius:8px;padding:8px 22px;cursor:pointer;font-weight:700;font-size:13px;">
+        Delete Forever
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _confirmCallback = null;
+
+function getCsrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  const col = type === 'error' ? '#f87171' : '#4ade80';
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:#0f0f0f;border:1px solid ${col};color:${col};
+    border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;
+    box-shadow:0 4px 20px rgba(0,0,0,.5);transition:opacity .4s;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3000);
+}
+
+function sevColor(s) {
+  return {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fcd34d',LOW:'#86efac'}[s] || '#9ca3af';
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.endsWith('Z') ? s : s + 'Z');
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function timeAgo(s) {
+  if (!s) return '';
+  const diff = (Date.now() - new Date(s.endsWith('Z') ? s : s + 'Z')) / 1000;
+  if (diff < 60)   return 'just now';
+  if (diff < 3600) return Math.round(diff/60) + 'm ago';
+  if (diff < 86400)return Math.round(diff/3600) + 'h ago';
+  return Math.round(diff/86400) + 'd ago';
+}
+
+// ── Load trash ────────────────────────────────────────────────────────────────
+
+async function loadTrash() {
+  const tbody = document.getElementById('trash-tbody');
+  try {
+    const r = await fetch('/api/cases/trash');
+    const cases = await r.json();
+
+    if (!cases.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="7" style="text-align:center;padding:60px;">
+          <div style="color:var(--text-muted);font-size:14px;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" style="display:block;margin:0 auto 12px;opacity:.3;">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+            Recycle bin is empty
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = cases.map(c => `
+      <tr>
+        <td style="font-family:monospace;font-size:11px;color:var(--accent);">${escHtml(c.case_id)}</td>
+        <td style="max-width:260px;">
+          <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(c.title)}</div>
+          ${c.src_ip ? `<div style="font-size:11px;color:var(--text-muted);font-family:monospace;">${escHtml(c.src_ip)}</div>` : ''}
+        </td>
+        <td><span style="color:${sevColor(c.severity)};font-weight:700;font-size:12px;">${c.severity}</span></td>
+        <td><span style="font-size:12px;color:var(--text-muted);">${(c.status||'').replace('_',' ')}</span></td>
+        <td style="font-size:12px;color:var(--text-muted);">${escHtml(c.deleted_by || '—')}</td>
+        <td style="font-size:11px;color:var(--text-muted);" title="${escHtml(fmtDate(c.deleted_at))}">
+          ${timeAgo(c.deleted_at)}
+        </td>
+        <td style="text-align:center;">
+          <div style="display:inline-flex;gap:6px;align-items:center;">
+            <button
+              data-id="${c.id}" data-case-id="${c.case_id}" data-title="${escHtml(c.title)}"
+              onclick="restoreCase(this)"
+              style="display:inline-flex;align-items:center;gap:5px;
+                     background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#4ade80;
+                     border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:600;
+                     white-space:nowrap;transition:all .15s;"
+              onmouseover="this.style.background='rgba(34,197,94,.28)';this.style.borderColor='#4ade80'"
+              onmouseout="this.style.background='rgba(34,197,94,.12)';this.style.borderColor='rgba(34,197,94,.4)'">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+              Restore
+            </button>
+            <button
+              data-id="${c.id}" data-case-id="${c.case_id}" data-title="${escHtml(c.title)}"
+              onclick="askPermanentDelete(this)"
+              style="display:inline-flex;align-items:center;gap:5px;
+                     background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+                     border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:600;
+                     white-space:nowrap;transition:all .15s;"
+              onmouseover="this.style.background='rgba(239,68,68,.28)';this.style.borderColor='#f87171'"
+              onmouseout="this.style.background='rgba(239,68,68,.12)';this.style.borderColor='rgba(239,68,68,.4)'">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              Delete Forever
+            </button>
+          </div>
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#f87171;">Failed to load trash</td></tr>';
+  }
+}
+
+// ── Restore ───────────────────────────────────────────────────────────────────
+
+async function restoreCase(btn) {
+  const id     = btn.dataset.id;
+  const caseId = btn.dataset.caseId;
+  btn.disabled = true; btn.textContent = 'Restoring…';
+  const r = await fetch(`/api/cases/${id}/restore`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCsrf() },
+  });
+  if (r.ok) {
+    showToast(`${caseId} restored to Cases`, 'success');
+    loadTrash();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    showToast(d.error || 'Restore failed', 'error');
+    btn.disabled = false; btn.textContent = 'Restore';
+  }
+}
+
+// ── Permanent delete ──────────────────────────────────────────────────────────
+
+function askPermanentDelete(btn) {
+  const id     = btn.dataset.id;
+  const caseId = btn.dataset.caseId;
+  const title  = btn.dataset.title;
+  document.getElementById('confirm-msg').textContent =
+    `"${title}" (${caseId}) will be permanently removed. This cannot be undone.`;
+  _confirmCallback = () => doPermanentDelete(id, caseId);
+  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-ok').onclick = () => {
+    const cb = _confirmCallback;
+    closeConfirm();
+    cb && cb();
+  };
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  _confirmCallback = null;
+}
+
+async function doPermanentDelete(id, caseId) {
+  const r = await fetch(`/api/cases/${id}/permanent`, {
+    method: 'DELETE',
+    headers: { 'X-CSRFToken': getCsrf() },
+  });
+  if (r.ok) {
+    showToast(`${caseId} permanently deleted`, 'success');
+    loadTrash();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    showToast(d.error || 'Delete failed', 'error');
+  }
+}
+
+// ── Empty trash ───────────────────────────────────────────────────────────────
+
+async function emptyTrash() {
+  const r = await fetch('/api/cases/trash');
+  const cases = await r.json();
+  if (!cases.length) { showToast('Recycle bin is already empty', 'success'); return; }
+
+  document.getElementById('confirm-msg').textContent =
+    `This will permanently delete all ${cases.length} case(s) in the recycle bin. This cannot be undone.`;
+  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-ok').onclick = async () => {
+    closeConfirm();
+    let ok = 0, fail = 0;
+    for (const c of cases) {
+      const res = await fetch(`/api/cases/${c.id}/permanent`, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': getCsrf() },
+      });
+      if (res.ok) ok++; else fail++;
+    }
+    showToast(`Emptied trash: ${ok} deleted${fail ? ', ' + fail + ' failed' : ''}`, fail ? 'error' : 'success');
+    loadTrash();
+  };
+}
+
+// Close overlay on backdrop click
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('confirm-overlay')) closeConfirm();
+});
+
+loadTrash();
+</script>
+{% endblock %}

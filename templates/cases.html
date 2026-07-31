@@ -1,0 +1,863 @@
+{% extends "base_soc.html" %}
+{% block title %}Cases{% endblock %}
+{% block page_title %}Case Management{% endblock %}
+
+{% block content %}
+<style>
+.case-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; margin-bottom:24px; }
+.case-stat  { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+.case-stat .cs-val { font-size:28px; font-weight:700; color:var(--accent); }
+.case-stat .cs-lbl { font-size:11px; color:var(--text-muted); margin-top:3px; }
+.case-stat.critical .cs-val { color:#f87171; }
+.case-stat.breach   .cs-val { color:#fb923c; }
+
+.cases-toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.filter-pill   { display:flex; align-items:center; gap:6px; background:var(--bg2);
+                 border:1px solid var(--border); border-radius:8px; padding:6px 12px;
+                 font-size:12px; color:var(--text-muted); }
+.filter-pill select, .filter-pill input {
+  background:#0f0f0f; border:none; outline:none; color:#f0ede8; font-size:12px;
+  border-radius:4px; padding:2px 4px; cursor:pointer; }
+.filter-pill select option {
+  background:#0f0f0f; color:#f0ede8; }
+
+.cases-table-wrap { overflow-x:auto; }
+table.cases-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+table.cases-tbl th { padding:10px 12px; text-align:left; color:var(--text-muted);
+                     border-bottom:1px solid var(--border); font-weight:600; font-size:11px;
+                     text-transform:uppercase; white-space:nowrap; }
+table.cases-tbl td { padding:10px 12px; border-bottom:1px solid var(--border);
+                     vertical-align:middle; }
+table.cases-tbl tr:hover td { background:rgba(200,196,190,.05); cursor:pointer; }
+/* Sticky Actions column — always visible even when table scrolls horizontally */
+table.cases-tbl th.col-actions,
+table.cases-tbl td.col-actions {
+  position:sticky; right:0;
+  background:var(--bg2);
+  z-index:2;
+  box-shadow:-4px 0 8px rgba(0,0,0,.4);
+}
+table.cases-tbl tr:hover td.col-actions { background:var(--bg3); }
+
+.badge-status { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; }
+.s-open    { background:rgba(138,136,128,.18); color:#c8c4be; border:1px solid rgba(138,136,128,.3); }
+.s-in_progress { background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.3); }
+.s-resolved { background:rgba(34,197,94,.18); color:#86efac; border:1px solid rgba(34,197,94,.3); }
+.s-closed  { background:rgba(107,114,128,.18); color:#9ca3af; border:1px solid rgba(107,114,128,.3); }
+
+.sla-ok   { color:#86efac; font-size:11px; }
+.sla-warn { color:#fb923c; font-size:11px; font-weight:700; }
+
+/* detail drawer */
+#case-drawer { position:fixed; top:0; right:-520px; width:520px; height:100vh;
+               background:var(--bg2); border-left:1px solid var(--border);
+               z-index:900; display:flex; flex-direction:column;
+               transition:right .25s ease; box-shadow:-4px 0 24px rgba(0,0,0,.4); }
+#case-drawer.open { right:0; }
+.drawer-header { padding:20px 22px; border-bottom:1px solid var(--border);
+                 display:flex; align-items:center; justify-content:space-between; }
+.drawer-body   { flex:1; overflow-y:auto; padding:20px 22px; }
+.drawer-footer { padding:14px 22px; border-top:1px solid var(--border); }
+.meta-row      { display:flex; gap:8px; margin-bottom:6px; font-size:12px; }
+.meta-row .mk  { color:var(--text-muted); width:110px; flex-shrink:0; }
+.meta-row .mv  { color:var(--text); }
+.notes-list { margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+.note-item  { background:var(--bg3); border-radius:8px; padding:10px 12px; border:1px solid var(--border); }
+.note-meta  { font-size:11px; color:var(--text-muted); margin-bottom:5px; }
+.note-body  { font-size:12px; color:var(--text); }
+.nt-escalation { border-left:3px solid #f59e0b; }
+.nt-resolution { border-left:3px solid #22c55e; }
+.nt-action     { border-left:3px solid #c8c4be; }
+
+.drawer-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+
+/* new case modal */
+.modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;
+                 display:flex;align-items:center;justify-content:center; display:none; }
+.modal-overlay.show { display:flex; }
+.modal-box     { background:var(--bg2); border:1px solid var(--border);
+                 border-radius:14px; padding:28px 30px; width:520px; max-width:95vw;
+                 max-height:90vh; overflow-y:auto; }
+.modal-title   { font-size:16px; font-weight:700; margin-bottom:18px; }
+.form-row      { margin-bottom:14px; }
+.form-row label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:5px; }
+.form-row input, .form-row select, .form-row textarea {
+  width:100%; background:var(--bg3); border:1px solid var(--border);
+  border-radius:8px; color:var(--text); padding:9px 12px; font-size:13px;
+  outline:none; box-sizing:border-box; }
+.form-row textarea { resize:vertical; min-height:80px; }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+</style>
+
+<!-- Stats bar -->
+<div class="case-stats" id="case-stats">
+  <div class="case-stat"><div class="cs-val" id="cs-total">-</div><div class="cs-lbl">Total Cases</div></div>
+  <div class="case-stat"><div class="cs-val" id="cs-open">-</div><div class="cs-lbl">Open</div></div>
+  <div class="case-stat"><div class="cs-val" id="cs-inprog">-</div><div class="cs-lbl">In Progress</div></div>
+  <div class="case-stat"><div class="cs-val" id="cs-resolved">-</div><div class="cs-lbl">Resolved</div></div>
+  <div class="case-stat critical"><div class="cs-val" id="cs-critical">-</div><div class="cs-lbl">Critical Active</div></div>
+  <div class="case-stat breach"><div class="cs-val" id="cs-breach">-</div><div class="cs-lbl">SLA Breached</div></div>
+</div>
+
+<!-- Toolbar -->
+<div class="cases-toolbar">
+  <div class="filter-pill">
+    Status:
+    <select id="flt-status" onchange="loadCases()">
+      <option value="">All</option>
+      <option value="OPEN">Open</option>
+      <option value="IN_PROGRESS">In Progress</option>
+      <option value="RESOLVED">Resolved</option>
+      <option value="CLOSED">Closed</option>
+    </select>
+  </div>
+  <div class="filter-pill">
+    Severity:
+    <select id="flt-sev" onchange="loadCases()">
+      <option value="">All</option>
+      <option value="CRITICAL">Critical</option>
+      <option value="HIGH">High</option>
+      <option value="MEDIUM">Medium</option>
+      <option value="LOW">Low</option>
+    </select>
+  </div>
+  <a href="/cases/trash" class="btn"
+     style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+            background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.4);
+            color:#9ca3af;font-size:12px;padding:7px 14px;border-radius:8px;
+            text-decoration:none;transition:all .15s;"
+     onmouseover="this.style.background='rgba(107,114,128,.25)';this.style.color='#e5e7eb'"
+     onmouseout="this.style.background='rgba(107,114,128,.12)';this.style.color='#9ca3af'">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+    Recycle Bin <span id="trash-count" style="display:none;background:rgba(239,68,68,.2);color:#f87171;
+      border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:2px;"></span>
+  </a>
+  <button class="btn btn-primary" onclick="openNewCaseModal()" style="display:inline-flex;align-items:center;gap:6px;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New Case
+  </button>
+</div>
+
+<!-- Table -->
+<div class="card" style="padding:0;overflow:hidden;">
+  <div class="cases-table-wrap">
+    <table class="cases-tbl">
+      <thead>
+        <tr>
+          <th>Case ID</th>
+          <th>Title</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Assigned To</th>
+          <th>SLA</th>
+          <th>Source</th>
+          <th>Age</th>
+          <th class="col-actions" style="width:90px;text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="cases-tbody">
+        <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Case Detail Drawer -->
+<div id="case-drawer">
+  <div class="drawer-header">
+    <div>
+      <div style="font-size:11px;color:var(--text-muted)" id="dr-case-id">—</div>
+      <div style="font-size:15px;font-weight:700;margin-top:3px" id="dr-title">—</div>
+    </div>
+    <button onclick="closeDrawer()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
+  </div>
+  <div class="drawer-body">
+    <!-- Meta -->
+    <div id="dr-meta"></div>
+    <!-- MITRE -->
+    <div id="dr-mitre" style="margin-top:10px;"></div>
+    <!-- Actions -->
+    <div class="drawer-actions" id="dr-actions"></div>
+    <!-- Notes -->
+    <div style="margin-top:20px;font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Timeline & Notes</div>
+    <div class="notes-list" id="dr-notes"></div>
+  </div>
+  <div class="drawer-footer">
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Add Note</div>
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+      <select id="note-type-sel" style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:7px 10px;font-size:12px;">
+        <option value="comment">Comment</option>
+        <option value="action">Action Taken</option>
+        <option value="escalation">Escalation</option>
+        <option value="resolution">Resolution</option>
+      </select>
+      <textarea id="note-body" rows="2" placeholder="Add investigation note…"
+        style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:12px;resize:none;outline:none;"></textarea>
+      <button class="btn btn-primary" onclick="submitNote()" style="padding:8px 14px;">Post</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Case Modal -->
+<div class="modal-overlay" id="modal-new-case">
+  <div class="modal-box">
+    <div class="modal-title">Create New Case</div>
+    <div class="form-row">
+      <label>Title *</label>
+      <input id="nc-title" type="text" placeholder="Brief description of the incident">
+    </div>
+    <div class="form-row">
+      <label>Description</label>
+      <textarea id="nc-desc" placeholder="Detailed description…"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-row">
+        <label>Severity</label>
+        <select id="nc-sev">
+          <option value="LOW">Low</option>
+          <option value="MEDIUM" selected>Medium</option>
+          <option value="HIGH">High</option>
+          <option value="CRITICAL">Critical</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Assign To</label>
+        <select id="nc-assign">
+          <option value="">Unassigned</option>
+          {% for a in analysts %}
+          <option value="{{ a.username }}">{{ a.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-row">
+        <label>Source IP (optional)</label>
+        <input id="nc-ip" type="text" placeholder="e.g. 192.168.1.5">
+      </div>
+      <div class="form-row">
+        <label>Attack Type (optional)</label>
+        <input id="nc-attack" type="text" placeholder="e.g. Port Scan">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeNewCaseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createCase()">Create Case</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CURRENT_ROLE = '{{ current_user.role }}';
+let _activeCaseId = null;
+let _activeCase   = null;   // full case object, used by export + delete
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function sevColor(sev) {
+  return {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fcd34d',LOW:'#86efac'}[sev] || '#9ca3af';
+}
+function statusClass(s) {
+  return 's-' + (s || 'open').toLowerCase().replace(/ /g,'_');
+}
+function fmtDate(s) {
+  return s ? new Date(s).toLocaleString() : '—';
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  const r = await fetch('/api/cases/stats');
+  const d = await r.json();
+  // Show recycle bin badge if there are trashed cases
+  const tc = document.getElementById('trash-count');
+  if (tc) {
+    if (d.trashed > 0) { tc.textContent = d.trashed; tc.style.display = 'inline'; }
+    else               { tc.style.display = 'none'; }
+  }
+  document.getElementById('cs-total').textContent    = d.total;
+  document.getElementById('cs-open').textContent     = d.open;
+  document.getElementById('cs-inprog').textContent   = d.in_progress;
+  document.getElementById('cs-resolved').textContent = d.resolved;
+  document.getElementById('cs-critical').textContent = d.critical_active;
+  document.getElementById('cs-breach').textContent   = d.sla_breached;
+}
+
+// ── Case List ─────────────────────────────────────────────────────────────────
+
+async function loadCases() {
+  const status = document.getElementById('flt-status').value;
+  const sev    = document.getElementById('flt-sev').value;
+  let url = '/api/cases?limit=200';
+  if (status) url += '&status=' + status;
+  if (sev)    url += '&severity=' + sev;
+
+  const r     = await fetch(url);
+  const cases = await r.json();
+  const tbody = document.getElementById('cases-tbody');
+
+  if (!cases.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted);">No cases found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = cases.map(c => {
+    const sla = c.sla_breached
+      ? '<span class="sla-warn">⚠ BREACHED</span>'
+      : '<span class="sla-ok">OK</span>';
+    const age = c.age_hours < 1
+      ? Math.round(c.age_hours * 60) + 'm'
+      : Math.round(c.age_hours) + 'h';
+    const delBtn = `<button
+         data-del-id="${c.id}"
+         data-del-case="${c.case_id}"
+         data-del-title="${escHtml(c.title)}"
+         onclick="event.stopPropagation();deleteCaseById(this)"
+         title="Delete case"
+         style="display:inline-flex;align-items:center;justify-content:center;
+                width:32px;height:32px;
+                background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#f87171;
+                border-radius:7px;padding:0;cursor:pointer;transition:all .15s;flex-shrink:0;"
+         onmouseover="this.style.background='rgba(239,68,68,.28)';this.style.borderColor='#f87171';this.style.color='#fff'"
+         onmouseout="this.style.background='rgba(239,68,68,.12)';this.style.borderColor='rgba(239,68,68,.35)';this.style.color='#f87171'">
+         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+           <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+         </svg>
+       </button>`;
+    return `<tr onclick="openDrawer(${c.id})">
+      <td style="font-family:monospace;font-size:11px;color:var(--accent);">${c.case_id}</td>
+      <td>${escHtml(c.title)}</td>
+      <td><span style="color:${sevColor(c.severity)};font-weight:700;font-size:12px;">${c.severity}</span></td>
+      <td><span class="badge-status ${statusClass(c.status)}">${c.status.replace('_',' ')}</span></td>
+      <td style="font-size:12px;">${c.assigned_to || '<span style="color:var(--text-muted)">Unassigned</span>'}</td>
+      <td>${sla}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${c.source}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${age}</td>
+      <td class="col-actions" style="text-align:center;">${delBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Drawer ────────────────────────────────────────────────────────────────────
+
+async function openDrawer(id) {
+  _activeCaseId = id;
+  const r = await fetch(`/api/cases/${id}`);
+  const c = await r.json();
+  _activeCase = c;
+
+  document.getElementById('dr-case-id').textContent = c.case_id;
+  document.getElementById('dr-title').textContent   = c.title;
+
+  // Meta rows
+  const deadline = fmtDate(c.sla_deadline);
+  document.getElementById('dr-meta').innerHTML = `
+    <div class="meta-row"><span class="mk">Severity</span><span class="mv" style="color:${sevColor(c.severity)};font-weight:700;">${c.severity}</span></div>
+    <div class="meta-row"><span class="mk">Status</span><span class="mv"><span class="badge-status ${statusClass(c.status)}">${c.status.replace('_',' ')}</span></span></div>
+    <div class="meta-row"><span class="mk">Assigned To</span><span class="mv">${c.assigned_to || 'Unassigned'}</span></div>
+    <div class="meta-row"><span class="mk">Source IP</span><span class="mv" style="font-family:monospace;">${c.src_ip || '—'}</span></div>
+    <div class="meta-row"><span class="mk">Attack Type</span><span class="mv">${c.attack_type || '—'}</span></div>
+    <div class="meta-row"><span class="mk">Created</span><span class="mv">${fmtDate(c.created_at)}</span></div>
+    <div class="meta-row"><span class="mk">SLA Deadline</span><span class="mv ${c.sla_breached ? 'sla-warn' : 'sla-ok'}">${deadline}${c.sla_breached ? ' ⚠' : ''}</span></div>
+    <div class="meta-row"><span class="mk">Notes</span><span class="mv">${c.note_count}</span></div>
+  `;
+
+  // MITRE
+  if (c.mitre_tactic || c.mitre_technique) {
+    document.getElementById('dr-mitre').innerHTML = `
+      <div style="background:#0f0f0f;border:1px solid rgba(138,136,128,.4);border-radius:8px;padding:10px 12px;font-size:12px;margin-top:8px;">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em;">MITRE ATT&CK</div>
+        <div style="color:#c8c4be;">${escHtml(c.mitre_tactic || '')}${c.mitre_technique ? ' — ' + escHtml(c.mitre_technique) : ''}</div>
+      </div>`;
+  } else {
+    document.getElementById('dr-mitre').innerHTML = '';
+  }
+
+  // Action buttons
+  const isClosed = c.status === 'CLOSED' || c.status === 'RESOLVED';
+  document.getElementById('dr-actions').innerHTML = `
+    ${isClosed
+      ? `<button class="btn" onclick="updateStatus('OPEN')"
+           style="font-size:12px;padding:6px 12px;background:#091a0f;border:1px solid rgba(34,197,94,.5);color:#4ade80;font-weight:600;">
+           ↺ Reopen Case
+         </button>`
+      : `<button class="btn btn-secondary" onclick="updateStatus('IN_PROGRESS')" style="font-size:12px;padding:6px 12px;">→ In Progress</button>
+         <button class="btn btn-secondary" onclick="updateStatus('RESOLVED')"    style="font-size:12px;padding:6px 12px;color:#86efac;">✓ Resolve</button>
+         <button class="btn btn-secondary" onclick="updateStatus('CLOSED')"      style="font-size:12px;padding:6px 12px;color:#9ca3af;">⊗ Close</button>`
+    }
+    <button class="btn" onclick="exportCasePdf()"
+      style="font-size:12px;padding:6px 12px;background:#0f0f0f;border:1px solid rgba(200,196,190,.4);color:#c8c4be;margin-left:auto;">
+      ⬇ Export PDF
+    </button>
+    <button class="btn" onclick="deleteCase()"
+      style="font-size:12px;padding:6px 12px;background:#1a0909;border:1px solid rgba(239,68,68,.5);color:#f87171;">
+      ✕ Delete
+    </button>
+  `;
+
+  renderNotes(c.notes || []);
+  document.getElementById('case-drawer').classList.add('open');
+}
+
+function renderNotes(notes) {
+  const el = document.getElementById('dr-notes');
+  if (!notes.length) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No notes yet.</div>';
+    return;
+  }
+  el.innerHTML = notes.map(n => `
+    <div class="note-item nt-${n.note_type}">
+      <div class="note-meta">${escHtml(n.author)} · ${n.note_type} · ${fmtDate(n.created_at)}</div>
+      <div class="note-body">${escHtml(n.body)}</div>
+    </div>
+  `).join('');
+}
+
+function closeDrawer() {
+  _activeCaseId = null;
+  _activeCase   = null;
+  document.getElementById('case-drawer').classList.remove('open');
+}
+
+// ── Status update ─────────────────────────────────────────────────────────────
+
+async function updateStatus(status) {
+  if (!_activeCaseId) return;
+  await fetch(`/api/cases/${_activeCaseId}`, {
+    method:  'PATCH',
+    headers: {'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+    body:    JSON.stringify({status}),
+  });
+  await loadCases();
+  await openDrawer(_activeCaseId);
+}
+
+// ── Delete case ───────────────────────────────────────────────────────────────
+
+async function deleteCase() {
+  if (!_activeCaseId || !_activeCase) return;
+  const confirmed = confirm(
+    `Delete case ${_activeCase.case_id}?\n\n"${_activeCase.title}"\n\nThis action cannot be undone.`
+  );
+  if (!confirmed) return;
+
+  const r = await fetch(`/api/cases/${_activeCaseId}`, {
+    method:  'DELETE',
+    headers: {'X-CSRFToken': getCsrf()},
+  });
+
+  if (r.ok) {
+    showToast(`Case ${_activeCase.case_id} deleted`, 'success');
+    closeDrawer();
+    loadCases();
+    loadStats();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    showToast(d.error || 'Delete failed', 'error');
+  }
+}
+
+// ── Inline delete (from table row, without opening drawer) ───────────────────
+
+async function deleteCaseById(btn) {
+  const id     = btn.dataset.delId;
+  const caseId = btn.dataset.delCase;
+  const title  = btn.dataset.delTitle;
+  if (!confirm(`Delete case ${caseId}?\n\n"${title}"\n\nThis action cannot be undone.`)) return;
+  const r = await fetch(`/api/cases/${id}`, {
+    method:  'DELETE',
+    headers: {'X-CSRFToken': getCsrf()},
+  });
+  if (r.ok) {
+    showToast(`Case ${caseId} deleted`, 'success');
+    loadCases();
+    loadStats();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    showToast(d.error || 'Delete failed', 'error');
+  }
+}
+
+// ── Export PDF — direct download via jsPDF ────────────────────────────────────
+
+async function exportCasePdf() {
+  if (!_activeCase) return;
+  const c = _activeCase;
+
+  // Load jsPDF + autoTable from CDN (cached after first use).
+  const loadScript = src => new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  showToast('Generating PDF…', 'success');
+  try {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  } catch(e) { showToast('Failed to load PDF library — check internet.', 'error'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc  = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const W    = doc.internal.pageSize.width;
+  const H    = doc.internal.pageSize.height;
+  const ML   = 14;   // left margin
+  const CW   = W - ML * 2;  // content width
+
+  const SEV_RGB  = { CRITICAL:[220,38,38], HIGH:[234,88,12], MEDIUM:[202,138,4], LOW:[22,163,74] };
+  const STAT_RGB = { OPEN:[138,136,128], IN_PROGRESS:[217,119,6], RESOLVED:[22,163,74], CLOSED:[107,114,128] };
+  const NOTE_RGB = { escalation:[217,119,6], resolution:[22,163,74], action:[138,136,128], comment:[71,85,105] };
+  const sevRgb   = SEV_RGB[c.severity]  || [71,85,105];
+  const statRgb  = STAT_RGB[c.status]   || [71,85,105];
+  const fmtD     = v => { try { return v ? new Date(v).toLocaleString() : '—'; } catch { return v || '—'; } };
+
+  let y = 0;
+
+  // ── Header bar ──────────────────────────────────────────────────────────────
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 26, 'F');
+  doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(241,245,249);
+  doc.text('SOC/SIEM', ML, 11);
+  doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+  doc.text('Security Incident Report', ML, 18);
+  doc.setFontSize(7.5);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, W - ML, 11, { align:'right' });
+  doc.text('Classification: INTERNAL', W - ML, 18, { align:'right' });
+  y = 32;
+
+  // ── Case ID + Title ──────────────────────────────────────────────────────────
+  doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(100,116,139);
+  doc.text((c.case_id || '').toUpperCase(), ML, y);
+  y += 5;
+  doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(15,23,42);
+  const titleLines = doc.splitTextToSize(c.title || '', CW - 20);
+  doc.text(titleLines, ML, y);
+  y += titleLines.length * 6.5 + 3;
+
+  // ── Severity / Status / SLA badges ──────────────────────────────────────────
+  let bx = ML;
+  [[sevRgb, c.severity || ''], [statRgb, (c.status||'').replace('_',' ')],
+   ...(c.sla_breached ? [[[220,38,38],'SLA BREACHED']] : [])
+  ].forEach(([rgb, label]) => {
+    const tw = doc.getTextWidth(label) + 8;
+    doc.setFillColor(...rgb); doc.roundedRect(bx, y, tw, 6.5, 1.5, 1.5, 'F');
+    doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+    doc.text(label, bx + tw/2, y + 4.5, { align:'center' });
+    bx += tw + 3;
+  });
+  y += 11;
+
+  // ── MITRE ATT&CK block ───────────────────────────────────────────────────────
+  if (c.mitre_tactic || c.mitre_technique) {
+    doc.setFillColor(238,242,255); doc.rect(ML, y, CW, 13, 'F');
+    doc.setDrawColor(199,210,254); doc.rect(ML, y, CW, 13);
+    doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(67,56,202);
+    doc.text('MITRE ATT&CK', ML + 3, y + 5);
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(55,48,163);
+    doc.text([c.mitre_tactic, c.mitre_technique].filter(Boolean).join(' — '), ML + 3, y + 10.5);
+    y += 17;
+  }
+
+  // ── Case details table ───────────────────────────────────────────────────────
+  doc.autoTable({
+    startY: y,
+    head: [['Field', 'Value']],
+    body: [
+      ['Source IP',    c.src_ip      || '—'],
+      ['Attack Type',  c.attack_type || '—'],
+      ['Assigned To',  c.assigned_to || 'Unassigned'],
+      ['Source',       c.source      || '—'],
+      ['Created',      fmtD(c.created_at)],
+      ['Last Updated', fmtD(c.updated_at)],
+      ['SLA Deadline', fmtD(c.sla_deadline) + (c.sla_breached ? '  ⚠ BREACHED' : '')],
+      ['Resolved At',  fmtD(c.resolved_at)],
+    ],
+    styles:      { fontSize:8.5, cellPadding:3, font:'helvetica' },
+    headStyles:  { fillColor:[30,58,95], textColor:[241,245,249], fontStyle:'bold', fontSize:7.5 },
+    columnStyles:{ 0:{ cellWidth:42, fontStyle:'bold', fillColor:[248,250,252], textColor:[71,85,105], fontSize:7.5 } },
+    alternateRowStyles:{ fillColor:[249,250,251] },
+    margin:{ left:ML, right:ML },
+  });
+  y = doc.lastAutoTable.finalY + 6;
+
+  // ── Description ──────────────────────────────────────────────────────────────
+  if (c.description) {
+    const dLines = doc.splitTextToSize(c.description, CW - 6);
+    const dH     = dLines.length * 4.8 + 12;
+    doc.setFillColor(248,250,252); doc.rect(ML, y, CW, dH, 'F');
+    doc.setDrawColor(226,232,240); doc.rect(ML, y, CW, dH);
+    doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,116,139);
+    doc.text('DESCRIPTION', ML + 3, y + 5);
+    doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(51,65,85);
+    doc.text(dLines, ML + 3, y + 10);
+    y += dH + 6;
+  }
+
+  // ── Timeline ─────────────────────────────────────────────────────────────────
+  const notes = c.notes || [];
+  doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,116,139);
+  doc.text(`INVESTIGATION TIMELINE (${notes.length} entries)`, ML, y);
+  doc.setDrawColor(226,232,240); doc.line(ML, y + 1.5, W - ML, y + 1.5);
+  y += 7;
+
+  if (!notes.length) {
+    doc.setFontSize(8); doc.setFont('helvetica','italic'); doc.setTextColor(148,163,184);
+    doc.text('No notes recorded.', ML, y);
+  } else {
+    for (const n of notes) {
+      const nRgb   = NOTE_RGB[n.note_type] || [71,85,105];
+      const bLines = doc.splitTextToSize(n.body || '', CW - 8);
+      const nH     = bLines.length * 4.5 + 13;
+      if (y + nH > H - 18) { doc.addPage(); y = 16; }
+      // Left accent stripe
+      doc.setFillColor(...nRgb); doc.rect(ML, y, 2.5, nH, 'F');
+      // Note background
+      doc.setFillColor(248,250,252); doc.rect(ML + 2.5, y, CW - 2.5, nH, 'F');
+      doc.setDrawColor(226,232,240); doc.rect(ML + 2.5, y, CW - 2.5, nH);
+      // Author + meta
+      doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(30,41,59);
+      doc.text(n.author || 'System', ML + 6, y + 5);
+      doc.setFont('helvetica','normal'); doc.setTextColor(100,116,139);
+      doc.text(`  ·  ${n.note_type}  ·  ${fmtD(n.created_at)}`,
+        ML + 6 + doc.getTextWidth(n.author || 'System'), y + 5);
+      // Body
+      doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(51,65,85);
+      doc.text(bLines, ML + 6, y + 10.5);
+      y += nH + 3;
+    }
+  }
+
+  // ── Footer on every page ─────────────────────────────────────────────────────
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226,232,240); doc.line(ML, H - 9, W - ML, H - 9);
+    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+    doc.text(`SOC/SIEM Platform  ·  ${c.case_id}`, ML, H - 4.5);
+    doc.text(`Page ${i} of ${pages}`, W - ML, H - 4.5, { align:'right' });
+  }
+
+  const safeName = (c.case_id || 'case').replace(/[^a-z0-9_-]/gi,'_').toLowerCase();
+  // Force file download to device — do not open in browser PDF viewer
+  const blob = doc.output('blob');
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `incident_${safeName}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+  showToast('PDF saved to Downloads', 'success');
+  return; // everything below is dead code (old window.open approach)
+
+  const SEV_CLR = { CRITICAL:'#dc2626', HIGH:'#ea580c', MEDIUM:'#ca8a04', LOW:'#16a34a' };
+  const STA_CLR = { OPEN:'#c8c4be', IN_PROGRESS:'#d97706', RESOLVED:'#16a34a', CLOSED:'#6b7280' };
+  const NOTE_CLR = { escalation:'#d97706', resolution:'#16a34a', action:'#c8c4be', comment:'#8a8880' };
+
+  const sevCol = SEV_CLR[c.severity]  || '#888880';
+  const staCol = STA_CLR[c.status]    || '#888880';
+
+  const notesHtml = (c.notes || []).length
+    ? (c.notes).map(n => {
+        const nc = NOTE_CLR[n.note_type] || '#888880';
+        return `<div style="margin-bottom:12px;padding:10px 14px;
+                  border-left:3px solid ${nc};background:#f5f4f2;border-radius:0 6px 6px 0;">
+          <div style="font-size:11px;color:#8a8880;margin-bottom:5px;">
+            <strong style="color:#111111;">${escHtml(n.author)}</strong>
+            &nbsp;·&nbsp;${n.note_type}
+            &nbsp;·&nbsp;${fmtDate(n.created_at)}
+          </div>
+          <div style="font-size:13px;color:#111111;line-height:1.6;white-space:pre-wrap;">${escHtml(n.body)}</div>
+        </div>`;
+      }).join('')
+    : '<p style="font-size:12px;color:#8a8880;font-style:italic;padding:8px 0;">No notes recorded.</p>';
+
+  const mitreHtml = (c.mitre_tactic || c.mitre_technique)
+    ? `<div style="background:#f5f4f2;border:1px solid #d8d4ce;border-radius:6px;
+                  padding:10px 14px;margin-bottom:20px;">
+        <div style="font-size:10px;font-weight:700;color:#555550;text-transform:uppercase;
+                    letter-spacing:.07em;margin-bottom:4px;">MITRE ATT&CK</div>
+        <div style="font-size:13px;color:#111111;">
+          ${escHtml(c.mitre_tactic || '')}${c.mitre_technique ? ' — ' + escHtml(c.mitre_technique) : ''}
+        </div>
+      </div>`
+    : '';
+
+  const descHtml = c.description
+    ? `<div style="margin-bottom:20px;">
+        <div class="sec-title">Description</div>
+        <div style="font-size:13px;color:#222222;line-height:1.7;white-space:pre-wrap;padding:10px 14px;
+                    background:#f5f4f2;border-radius:6px;border:1px solid #d8d4ce;">
+          ${escHtml(c.description)}
+        </div>
+      </div>`
+    : '';
+
+  const row = (label, value, mono) =>
+    `<div style="display:flex;border-bottom:1px solid #ddd9d4;">
+       <div style="width:148px;flex-shrink:0;padding:7px 12px;background:#f5f4f2;
+                   font-size:11px;font-weight:600;color:#555550;text-transform:uppercase;
+                   letter-spacing:.05em;border-right:1px solid #ddd9d4;">${label}</div>
+       <div style="flex:1;padding:7px 12px;font-size:12px;color:#111111;
+                   ${mono ? 'font-family:monospace;' : ''}">${value}</div>
+     </div>`;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Incident Report — ${escHtml(c.case_id)}</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Segoe UI',Arial,sans-serif; font-size:13px; color:#111111; background:#fff; }
+  .page { max-width:780px; margin:0 auto; padding:36px 40px; }
+  .sec-title { font-size:10px; font-weight:700; color:#8a8880; text-transform:uppercase;
+               letter-spacing:.1em; margin-bottom:10px; padding-bottom:6px;
+               border-bottom:2px solid #ddd9d4; }
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .no-print { display:none; }
+    .page { padding:24px 28px; }
+  }
+</style>
+</head><body><div class="page">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;
+              margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #111111;">
+    <div>
+      <div style="font-size:20px;font-weight:800;color:#111111;letter-spacing:-.5px;">
+        SOC<span style="color:#ef4444;">/</span>SIEM
+      </div>
+      <div style="font-size:11px;color:#8a8880;margin-top:2px;">Security Incident Report</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#8a8880;line-height:1.7;">
+      <div>Generated: ${new Date().toLocaleString()}</div>
+      <div>Classification: <strong style="color:#dc2626;">INTERNAL</strong></div>
+    </div>
+  </div>
+
+  <!-- Case ID + Title -->
+  <div style="margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;color:#8a8880;letter-spacing:.1em;
+                text-transform:uppercase;margin-bottom:4px;">${escHtml(c.case_id)}</div>
+    <div style="font-size:22px;font-weight:700;color:#111111;line-height:1.3;margin-bottom:10px;">
+      ${escHtml(c.title)}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <span style="display:inline-block;padding:3px 12px;border-radius:4px;font-size:11px;
+                   font-weight:700;color:#fff;background:${sevCol};">${c.severity}</span>
+      <span style="display:inline-block;padding:3px 12px;border-radius:4px;font-size:11px;
+                   font-weight:700;color:#fff;background:${staCol};">
+        ${(c.status || '').replace('_',' ')}
+      </span>
+      ${c.sla_breached ? '<span style="display:inline-block;padding:3px 12px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:#dc2626;">SLA BREACHED</span>' : ''}
+    </div>
+  </div>
+
+  ${mitreHtml}
+
+  <!-- Details grid -->
+  <div style="margin-bottom:20px;">
+    <div class="sec-title">Case Details</div>
+    <div style="border:1px solid #ddd9d4;border-radius:8px;overflow:hidden;">
+      ${row('Source IP',    escHtml(c.src_ip      || '—'), true)}
+      ${row('Attack Type',  escHtml(c.attack_type || '—'), false)}
+      ${row('Assigned To',  escHtml(c.assigned_to || 'Unassigned'), false)}
+      ${row('Source',       escHtml(c.source      || '—'), false)}
+      ${row('Created',      fmtDate(c.created_at), false)}
+      ${row('Last Updated', fmtDate(c.updated_at), false)}
+      ${row('SLA Deadline',
+          `<span style="color:${c.sla_breached ? '#dc2626' : '#16a34a'};font-weight:${c.sla_breached ? '700' : '400'};">
+             ${fmtDate(c.sla_deadline)}${c.sla_breached ? ' — BREACHED' : ''}
+           </span>`, false)}
+      ${row('Resolved At',  fmtDate(c.resolved_at), false)}
+    </div>
+  </div>
+
+  ${descHtml}
+
+  <!-- Timeline -->
+  <div style="margin-bottom:24px;">
+    <div class="sec-title">Investigation Timeline (${(c.notes||[]).length} entries)</div>
+    ${notesHtml}
+  </div>
+
+  <!-- Footer -->
+  <div style="padding-top:12px;border-top:1px solid #1e1e1e;font-size:10px;color:#8a8880;
+              display:flex;justify-content:space-between;">
+    <span>SOC/SIEM Platform — Automated Incident Report</span>
+    <span>${escHtml(c.case_id)} · ${new Date().toISOString()}</span>
+  </div>
+
+</div>
+<script>window.onload = () => { window.print(); }<\/script>
+</body></html>`;
+
+  const win = window.open('', '_blank', 'width=960,height=750,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to export PDF', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+async function submitNote() {
+  if (!_activeCaseId) return;
+  const body      = document.getElementById('note-body').value.trim();
+  const note_type = document.getElementById('note-type-sel').value;
+  if (!body) return;
+  await fetch(`/api/cases/${_activeCaseId}/notes`, {
+    method:  'POST',
+    headers: {'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+    body:    JSON.stringify({body, note_type}),
+  });
+  document.getElementById('note-body').value = '';
+  await openDrawer(_activeCaseId);
+  await loadStats();
+}
+
+// ── New case modal ────────────────────────────────────────────────────────────
+
+function openNewCaseModal()  { document.getElementById('modal-new-case').classList.add('show');    }
+function closeNewCaseModal() { document.getElementById('modal-new-case').classList.remove('show'); }
+
+async function createCase() {
+  const title = document.getElementById('nc-title').value.trim();
+  if (!title) { showToast('Title is required', 'error'); return; }
+  const body = {
+    title,
+    description: document.getElementById('nc-desc').value,
+    severity:    document.getElementById('nc-sev').value,
+    assigned_to: document.getElementById('nc-assign').value,
+    src_ip:      document.getElementById('nc-ip').value,
+    attack_type: document.getElementById('nc-attack').value,
+  };
+  const r = await fetch('/api/cases', {
+    method:  'POST',
+    headers: {'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+    body:    JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (r.ok) {
+    showToast('Case created: ' + d.case_id, 'success');
+    closeNewCaseModal();
+    document.getElementById('nc-title').value = '';
+    document.getElementById('nc-desc').value  = '';
+    loadCases(); loadStats();
+  } else {
+    showToast(d.error || 'Create failed', 'error');
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadStats();
+loadCases();
+setInterval(() => { loadStats(); loadCases(); }, 15000);
+</script>
+{% endblock %}

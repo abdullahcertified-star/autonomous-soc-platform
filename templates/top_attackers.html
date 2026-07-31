@@ -1,0 +1,160 @@
+{% extends "base_soc.html" %}
+{% block title %}Top Attackers{% endblock %}
+{% block page_title %}Top Attackers{% endblock %}
+
+{% block content %}
+
+<div class="stats-row" style="margin-bottom:16px;">
+  <div class="stat-card red">
+    <div class="stat-label">Tracked IPs</div>
+    <div class="stat-value" id="atk-count">0</div>
+    <div class="stat-sub">known sources</div>
+  </div>
+  <div class="stat-card orange">
+    <div class="stat-label">High Severity</div>
+    <div class="stat-value" id="atk-high">0</div>
+    <div class="stat-sub">score ≥ 70</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Blocked</div>
+    <div class="stat-value" id="atk-blocked">0</div>
+    <div class="stat-sub">firewall rules</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-label">Max Score</div>
+    <div class="stat-value" id="atk-max">0</div>
+    <div class="stat-sub">top threat score</div>
+  </div>
+</div>
+
+<!-- Manual block form -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header">
+    <span class="card-title">Manual IP Block</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <input id="manual-ip" class="filter-input" placeholder="Enter IP address..." style="min-width:200px;" />
+    <input id="manual-reason" class="filter-input" placeholder="Reason (optional)" style="min-width:200px;" />
+    <button class="btn btn-block" onclick="manualBlock()">Block IP</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Top 10 Attackers — Ranked by Risk</span>
+    <span id="atk-refresh" style="font-size:10px;color:#8a8880;font-family:var(--font-mono)"></span>
+  </div>
+  <div class="table-wrap">
+    <table class="soc-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>IP Address</th>
+          <th>Country</th>
+          <th>Attack Type</th>
+          <th>Packets</th>
+          <th>Severity Score</th>
+          <th>Risk</th>
+          <th>Last Seen</th>
+          <th>Firewall</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="atk-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function riskLevel(score) {
+  if (score>=70) return {label:'CRITICAL',cls:'pill-attack'};
+  if (score>=40) return {label:'HIGH',    cls:'pill-medium'};
+  if (score>=15) return {label:'MEDIUM',  cls:'pill-low'};
+  return {label:'LOW',cls:'pill-normal'};
+}
+
+function scoreBar(score) {
+  const color=score>=70?'#ef4444':score>=40?'#f97316':score>=15?'#eab308':'#22c55e';
+  return `<div style="display:flex;align-items:center;gap:8px;">
+    <div style="flex:1;height:6px;background:#0f0f0f;border-radius:999px;overflow:hidden;min-width:80px;">
+      <div style="width:${score}%;height:100%;background:${color};border-radius:999px;"></div>
+    </div>
+    <span style="font-family:var(--font-mono);font-size:11px;color:${color};min-width:24px;">${score}</span>
+  </div>`;
+}
+
+async function blockIP(ip) {
+  try {
+    const res=await fetch('/api/firewall/block',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},body:JSON.stringify({ip,reason:'Blocked from top attackers'})});
+    if (!res.ok){showToast(`Block failed (${res.status})`,'error');return;}
+    const d=await res.json();
+    showToast(d.status==='blocked'?`${ip} blocked`:`${ip} ${d.status}`,'success');
+    refresh();
+  } catch(e){showToast('Block failed: '+e.message,'error');}
+}
+
+async function unblockIP(ip) {
+  try {
+    const res=await fetch('/api/firewall/unblock',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},body:JSON.stringify({ip})});
+    if (!res.ok){showToast(`Unblock failed (${res.status})`,'error');return;}
+    const d=await res.json();
+    showToast(d.status==='unblocked'?`${ip} unblocked`:`${ip} ${d.status}`,'success');
+    refresh();
+  } catch(e){showToast('Unblock failed: '+e.message,'error');}
+}
+
+async function manualBlock() {
+  const ip=document.getElementById('manual-ip').value.trim();
+  const reason=document.getElementById('manual-reason').value.trim()||'Manual block';
+  if (!ip){showToast('Enter an IP address','error');return;}
+  await blockIP(ip);
+  document.getElementById('manual-ip').value='';
+  document.getElementById('manual-reason').value='';
+}
+
+async function refresh() {
+  try {
+    const res=await fetch('/api/top-attackers',{cache:'no-store'});
+    if (!res.ok) return;
+    const data=await res.json();
+    const list=data.attackers||[];
+
+    document.getElementById('atk-count').textContent=list.length;
+    document.getElementById('atk-high').textContent=list.filter(a=>a.severity_score>=70).length;
+    document.getElementById('atk-blocked').textContent=list.filter(a=>a.blocked).length;
+    document.getElementById('atk-max').textContent=list.length?list[0].severity_score:0;
+    document.getElementById('atk-refresh').textContent='Updated '+new Date().toLocaleTimeString('en-US',{hour12:true});
+
+    const body=document.getElementById('atk-body');
+    if (!list.length){body.innerHTML='<tr><td colspan="10"><div class="empty-state">No attackers tracked yet.</div></td></tr>';return;}
+
+    body.innerHTML=list.map((a,i)=>{
+      const risk=riskLevel(a.severity_score||0);
+      const blocked=a.blocked||false;
+      const actionBtn=blocked
+        ?`<button class="btn btn-unblock" onclick="unblockIP('${a.ip}')">Unblock</button>`
+        :`<button class="btn btn-block" onclick="blockIP('${a.ip}')">Block</button>`;
+      return `<tr class="${blocked?'blocked-row':''}">
+        <td style="color:#3a3836;font-family:var(--font-mono)">${i+1}</td>
+        <td class="mono">${a.ip}</td>
+        <td class="mono" style="color:#8a8880">${a.country||'Unknown'}</td>
+        <td>${a.attack_type||'Normal'}</td>
+        <td class="mono">${a.packet_count||0}</td>
+        <td>${scoreBar(a.severity_score||0)}</td>
+        <td><span class="pill ${risk.cls}">${risk.label}</span></td>
+        <td class="mono" style="color:#8a8880">${a.last_seen||'--'}</td>
+        <td>${blocked?'<span class="pill pill-blocked">BLOCKED</span>':'<span style="color:#3a3836;font-size:11px;">ALLOWED</span>'}</td>
+        <td>${actionBtn}</td>
+      </tr>`;
+    }).join('');
+
+  } catch(e){}
+}
+
+refresh();
+setInterval(refresh,3000);
+</script>
+{% endblock %}

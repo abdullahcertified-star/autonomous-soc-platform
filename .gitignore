@@ -1,0 +1,56 @@
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Runtime data & state (regenerated at run time; defaults live in code)
+/logs.json
+/logs_trash.json
+core/firewall_state.json
+core/sim_events.json
+core/protection_settings.json
+detection/detection_config.json
+instance/
+
+# Generated reports
+*.pdf
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
