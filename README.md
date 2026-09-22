@@ -144,28 +144,41 @@ pip install -r requirements.txt
 
 ### 3. Configure environment
 
-Copy the environment template:
-```bash
-cp .env.example .env          # Windows: copy .env.example .env
-```
+Think of `.env` as your private local settings file (which is git-ignored and never committed to GitHub), while `.env.example` is the public template.
 
-Generate a secure `SECRET_KEY`:
+**A. Create your `.env` file from the template:**
 ```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+cp .env.example .env          # Windows PowerShell: copy .env.example .env
 ```
+*(Alternatively in VS Code / File Explorer: Right-click `.env.example` → Copy → Paste → Rename to `.env`)*
 
-Open `.env` and configure your settings:
-* **Admin Credentials**: Set your preferred initial superuser credentials:
-  ```ini
-  SEED_ADMIN_USERNAME=seed_admin
-  SEED_ADMIN_EMAIL=admin@soc.local
-  SEED_ADMIN_PASSWORD=your-secure-password-here
-  ```
-  *(Security Note: If `SEED_ADMIN_PASSWORD` is left blank or unset, the platform automatically generates a secure one-time 16-character password and displays it in your console on initial startup).*
-* **Database Selection**:
-  * **Local SQLite (Zero-Config)**: Keep `SQLALCHEMY_DATABASE_URI` commented out (default).
-  * **PostgreSQL / Neon / RDS**: Uncomment and set your connection URI (`postgresql://user:pass@host/dbname?sslmode=require`).
-* **AI Copilot (Optional)**: Add your `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/) for Gemini 2.5 Flash reasoning (falls back to built-in heuristic analyst if left blank).
+**B. Open `.env` and set your values:**
+
+1. **Pick your Admin Password:**  
+   Change `your-strong-password-here` to the password you want to use when logging into the platform:
+   ```ini
+   SEED_ADMIN_USERNAME=seed_admin
+   SEED_ADMIN_EMAIL=admin@soc.local
+   SEED_ADMIN_PASSWORD=YourPassword123!
+   ```
+   *(Note: If left blank or unset, the platform will auto-generate a secure 16-character password and display it in your console on startup).*
+
+2. **Generate your Flask Secret Key:**  
+   Run this one-liner to generate a secure random scramble-code for session cookies:
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+   Copy the output and paste it after `SECRET_KEY=`:
+   ```ini
+   SECRET_KEY=d83f2a1b9c4e7f0a12847291a0b3c5e7...
+   ```
+
+3. **Choose your Database:**  
+   * **Local SQLite (Zero Setup — Recommended for testing):** Keep `SQLALCHEMY_DATABASE_URI` commented out (default). The platform will automatically create and manage a local database with zero configuration.
+   * **PostgreSQL / Neon / RDS:** Uncomment and set your connection URI (`postgresql://user:pass@host/dbname?sslmode=require`).
+
+4. **AI Copilot (Optional):**  
+   * Add your `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/) for Gemini 2.5 Flash reasoning (falls back to the built-in heuristic analyst if left blank).
 
 > **Never commit `.env`** — it is listed in `.gitignore` and holds your local secrets.
 

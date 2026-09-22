@@ -148,17 +148,22 @@ pip install waitress
 
 ## 5. Environment Variables (.env)
 
-Create a `.env` file in the project root. Never commit this file to version control.
+A `.env` file holds your private credentials and configuration settings on your local machine. It is excluded from Git via `.gitignore` so your secrets are never exposed on GitHub.
+
+### Step A: Create your `.env` from the template
 
 ```bash
 # Windows PowerShell
-Copy-Item .env.example .env
+copy .env.example .env
 
 # Linux / macOS
 cp .env.example .env
 ```
+*(Or in File Explorer / VS Code: Right-click `.env.example` → Copy → Paste → Rename to `.env`)*
 
-Edit `.env` with your values:
+### Step B: Edit `.env` with your values
+
+Open the newly created `.env` file in your editor:
 
 ```ini
 # ─────────────────────────────────────────────────────────
@@ -166,26 +171,27 @@ Edit `.env` with your values:
 #  Copy to .env and fill in your values
 # ─────────────────────────────────────────────────────────
 
-# REQUIRED — Flask secret key (generate with: python -c "import secrets; print(secrets.token_hex(32))")
+# 1. FLASK SECRET KEY — Scrambles session cookies
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
 SECRET_KEY=change-me-to-a-long-random-string-before-deploy
 
-# ENVIRONMENT — 'development' or 'production'
-# production: enables SESSION_COOKIE_SECURE (requires HTTPS)
-FLASK_ENV=development
-
-# SEED ADMIN ACCOUNT — Created automatically on first run
+# 2. SEED ADMIN ACCOUNT — Created automatically on first run
 SEED_ADMIN_USERNAME=seed_admin
 SEED_ADMIN_EMAIL=admin@soc.local
 SEED_ADMIN_PASSWORD=your-secure-password-here
 # Note: If SEED_ADMIN_PASSWORD is left blank or unset, a secure 16-character
 # random password will be auto-generated and printed to the console on first launch.
 
-# DATABASE — SQLite is the default. Uncomment one of the alternatives below.
+# 3. DATABASE — SQLite is the default (zero configuration needed).
+# Uncomment one of the alternatives below for production scale:
 # SQLALCHEMY_DATABASE_URI=sqlite:///users.db
 # SQLALCHEMY_DATABASE_URI=postgresql://user:password@localhost/soc_db
 # SQLALCHEMY_DATABASE_URI=mssql+pyodbc://user:pass@server/soc_db?driver=ODBC+Driver+17+for+SQL+Server
 
-# AGENTIC AI (Optional) — Gemini 2.5 Flash API Key (falls back to local heuristic analyst if blank)
+# 4. ENVIRONMENT — 'development' (default) or 'production' (requires HTTPS)
+FLASK_ENV=development
+
+# 5. AGENTIC AI (Optional) — Gemini 2.5 Flash API Key (falls back to local heuristic analyst if blank)
 # GEMINI_API_KEY=your-gemini-api-key-here
 
 # SYSLOG INGESTER (optional) — UDP port to receive syslog messages
@@ -195,7 +201,12 @@ SEED_ADMIN_PASSWORD=your-secure-password-here
 # RATELIMIT_DEFAULT=500 per minute
 ```
 
-The application reads `.env` automatically via `python-dotenv`.
+### Summary of What to Change:
+1. **`SEED_ADMIN_PASSWORD`**: Replace `your-secure-password-here` with the password you want for logging into the dashboard.
+2. **`SECRET_KEY`**: Run `python -c "import secrets; print(secrets.token_hex(32))"` and paste the generated random string.
+3. **Database**: If you leave `SQLALCHEMY_DATABASE_URI` commented out, the platform automatically creates a local SQLite database with zero installation required!
+
+The application reads `.env` automatically on startup via `python-dotenv`.
 
 ---
 
