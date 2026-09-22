@@ -173,10 +173,20 @@ SECRET_KEY=change-me-to-a-long-random-string-before-deploy
 # production: enables SESSION_COOKIE_SECURE (requires HTTPS)
 FLASK_ENV=development
 
+# SEED ADMIN ACCOUNT — Created automatically on first run
+SEED_ADMIN_USERNAME=seed_admin
+SEED_ADMIN_EMAIL=admin@soc.local
+SEED_ADMIN_PASSWORD=your-secure-password-here
+# Note: If SEED_ADMIN_PASSWORD is left blank or unset, a secure 16-character
+# random password will be auto-generated and printed to the console on first launch.
+
 # DATABASE — SQLite is the default. Uncomment one of the alternatives below.
 # SQLALCHEMY_DATABASE_URI=sqlite:///users.db
 # SQLALCHEMY_DATABASE_URI=postgresql://user:password@localhost/soc_db
 # SQLALCHEMY_DATABASE_URI=mssql+pyodbc://user:pass@server/soc_db?driver=ODBC+Driver+17+for+SQL+Server
+
+# AGENTIC AI (Optional) — Gemini 2.5 Flash API Key (falls back to local heuristic analyst if blank)
+# GEMINI_API_KEY=your-gemini-api-key-here
 
 # SYSLOG INGESTER (optional) — UDP port to receive syslog messages
 # SYSLOG_PORT=514
@@ -363,25 +373,22 @@ nssm start SOC-Platform
 
 ## 9. First-Time Admin Account
 
-Navigate to **http://localhost:5000/auth/register** and create your first account.
+On first application startup, the platform automatically creates an initial superuser (`seed_admin`) using the settings provided in your `.env`:
 
-Then promote it to **admin** via the SQLite shell:
+* **Username:** Configured via `SEED_ADMIN_USERNAME` (default: `seed_admin`)
+* **Email:** Configured via `SEED_ADMIN_EMAIL` (default: `admin@soc.local`)
+* **Password:** Configured via `SEED_ADMIN_PASSWORD` (or auto-generated if left blank)
+
+You can log in immediately at **http://localhost:5000/auth/login**.
+
+### Creating Additional Admin Accounts
+
+New users registering via `/auth/register` start in a **pending approval** queue. The `seed_admin` can approve and promote them directly from **Settings → Users** in the web dashboard.
+
+Alternatively, an account can be promoted to `admin` via the CLI:
 
 ```bash
-# Windows
-py -c "
-from app import create_app
-from extensions import db
-from models import User
-app = create_app()
-with app.app_context():
-    u = User.query.filter_by(username='YOUR_USERNAME').first()
-    u.role = 'admin'
-    db.session.commit()
-    print(f'Promoted {u.username} to admin')
-"
-
-# Linux
+# Windows / Linux CLI promotion
 python -c "
 from app import create_app
 from extensions import db
@@ -389,9 +396,11 @@ from models import User
 app = create_app()
 with app.app_context():
     u = User.query.filter_by(username='YOUR_USERNAME').first()
-    u.role = 'admin'
-    db.session.commit()
-    print(f'Promoted {u.username} to admin')
+    if u:
+        u.role = 'admin'
+        u.is_approved = True
+        db.session.commit()
+        print(f'Successfully promoted {u.username} to active admin')
 "
 ```
 

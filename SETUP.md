@@ -153,20 +153,19 @@ Save the file.
 
 ## Step 7 — Configure the .env File
 
-The project root contains a `.env` file that holds the admin password and Flask secret key.
+The project root contains a `.env` template that holds the admin credentials and security keys.
+Copy `.env.example` to `.env` and set your preferred values:
 
-Open `.env` and set these values:
-
-```
+```ini
 SEED_ADMIN_USERNAME=seed_admin
 SEED_ADMIN_EMAIL=admin@soc.local
-SEED_ADMIN_PASSWORD=Admin@SOC2024!
+SEED_ADMIN_PASSWORD=your-secure-password-here
 SECRET_KEY=any-long-random-string-here
 FLASK_ENV=development
 ```
 
-You can change `SEED_ADMIN_PASSWORD` to any password you prefer.
-The `SECRET_KEY` can be any long random string.
+* Choose a strong password for `SEED_ADMIN_PASSWORD`. If left blank, the system will auto-generate a secure random 16-character password and display it on first launch.
+* Generate a strong `SECRET_KEY` using: `python -c "import secrets; print(secrets.token_hex(32))"`
 
 ---
 

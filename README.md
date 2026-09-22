@@ -144,13 +144,30 @@ pip install -r requirements.txt
 
 ### 3. Configure environment
 
+Copy the environment template:
 ```bash
 cp .env.example .env          # Windows: copy .env.example .env
-python -c "import secrets; print(secrets.token_hex(32))"   # paste into SECRET_KEY
 ```
 
-Set `SECRET_KEY`, `SEED_ADMIN_PASSWORD`, and `FLASK_ENV` in `.env`. **Never commit `.env`** — it is
-gitignored.
+Generate a secure `SECRET_KEY`:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Open `.env` and configure your settings:
+* **Admin Credentials**: Set your preferred initial superuser credentials:
+  ```ini
+  SEED_ADMIN_USERNAME=seed_admin
+  SEED_ADMIN_EMAIL=admin@soc.local
+  SEED_ADMIN_PASSWORD=your-secure-password-here
+  ```
+  *(Security Note: If `SEED_ADMIN_PASSWORD` is left blank or unset, the platform automatically generates a secure one-time 16-character password and displays it in your console on initial startup).*
+* **Database Selection**:
+  * **Local SQLite (Zero-Config)**: Keep `SQLALCHEMY_DATABASE_URI` commented out (default).
+  * **PostgreSQL / Neon / RDS**: Uncomment and set your connection URI (`postgresql://user:pass@host/dbname?sslmode=require`).
+* **AI Copilot (Optional)**: Add your `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/) for Gemini 2.5 Flash reasoning (falls back to built-in heuristic analyst if left blank).
+
+> **Never commit `.env`** — it is listed in `.gitignore` and holds your local secrets.
 
 ### 4. Run
 
@@ -158,10 +175,8 @@ gitignored.
 python app.py
 ```
 
-The server starts at **http://127.0.0.1:5000**. On first run the app creates the schema, seeds the
-RBAC roles and permissions, and creates the `seed_admin` superuser from your `.env` values.
-
-**Change the seed admin password immediately after first login.**
+The server starts at **http://127.0.0.1:5000**. On first run, the app creates the database schema, seeds the
+RBAC roles and permissions, and registers the initial `seed_admin` superuser from your `.env` configuration.
 
 > Packet capture needs elevated privileges. Run as Administrator on Windows, or on Linux grant the
 > capability once: `sudo setcap cap_net_raw+eip $(which python3)`. Without it the sniffer starts but
