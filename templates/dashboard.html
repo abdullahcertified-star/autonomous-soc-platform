@@ -792,9 +792,29 @@ function initTopologyCanvas() {
     const tip=document.getElementById('topo-tooltip');
     if (hit) {
       tip.style.display='block';
-      const tc={host:'#22d3ee',attacker:'#ef4444',device:'#8a8880'};
-      document.getElementById('topo-tip-type').style.color=tc[hit.type]||'#8a8880';
-      document.getElementById('topo-tip-type').textContent=(hit.type||'').toUpperCase();
+      let typeLabel = (hit.type || '').toUpperCase();
+      let typeColor = '#8a8880';
+
+      if (hit.type === 'host') {
+        typeLabel = 'LOCAL HOST';
+        typeColor = '#22d3ee';
+      } else if (hit.type === 'device') {
+        typeLabel = 'LOCAL DEVICE';
+        typeColor = '#94a3b8';
+      } else if (hit.type === 'attacker') {
+        if (hit.severity === 'HIGH') {
+          typeLabel = 'ATTACKER';
+          typeColor = '#ef4444';
+        } else {
+          typeLabel = 'EXTERNAL SOURCE';
+          typeColor = '#f97316';
+        }
+      }
+
+      document.getElementById('topo-tip-type').style.color = typeColor;
+      document.getElementById('topo-tip-type').textContent = typeLabel;
+      tip.style.borderColor = typeColor + '88';
+      tip.style.boxShadow = '0 4px 20px ' + typeColor + '2b';
       document.getElementById('topo-tip-ip').textContent=hit.ip||hit.id;
       const nm=hit.name&&hit.name!==hit.ip?hit.name:'';
       document.getElementById('topo-tip-detail').textContent=
