@@ -38,6 +38,7 @@ logs/
 # Runtime data & state (regenerated at run time; defaults live in code)
 /logs.json
 /logs_trash.json
+*.lock
 core/firewall_state.json
 core/sim_events.json
 core/protection_settings.json

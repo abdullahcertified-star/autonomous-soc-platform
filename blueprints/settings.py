@@ -627,8 +627,9 @@ def admin_change_role(user_id):
         return redirect(url_for('settings.admin_pending_users'))
 
     try:
-        # Update role column
+        # Update role column and increment session_version to invalidate active sessions (SEC-06)
         user.role = internal_role
+        user.session_version = (getattr(user, 'session_version', 1) or 1) + 1
 
         # Deactivate all current active role assignments
         UserRole.query.filter_by(user_id=user.id, is_active=True).update({'is_active': False})

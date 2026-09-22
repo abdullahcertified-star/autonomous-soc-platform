@@ -201,13 +201,16 @@ def update_env_file(key: str, value: str, env_path: Optional[str] = None) -> boo
     """
     Safely updates or appends a key=value pair in .env without overwriting other entries.
     Also updates os.environ in the current process.
+    Sanitizes keys and values to prevent newline / CRLF configuration injection (SEC-10).
     """
     path = env_path or ENV_PATH
-    os.environ[key] = value
+    clean_key = re.sub(r'[\r\n=]', '', str(key)).strip()
+    clean_value = re.sub(r'[\r\n]', '', str(value)).strip()
+    os.environ[clean_key] = clean_value
 
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"{key}={value}\n")
+            f.write(f"{clean_key}={clean_value}\n")
         return True
 
     with open(path, "r", encoding="utf-8") as f:
@@ -215,12 +218,12 @@ def update_env_file(key: str, value: str, env_path: Optional[str] = None) -> boo
 
     updated = False
     new_lines = []
-    key_prefix = f"{key}="
+    key_prefix = f"{clean_key}="
 
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(key_prefix):
-            new_lines.append(f"{key}={value}\n")
+            new_lines.append(f"{clean_key}={clean_value}\n")
             updated = True
         else:
             new_lines.append(line)
@@ -228,7 +231,7 @@ def update_env_file(key: str, value: str, env_path: Optional[str] = None) -> boo
     if not updated:
         if new_lines and not new_lines[-1].endswith("\n"):
             new_lines[-1] += "\n"
-        new_lines.append(f"{key}={value}\n")
+        new_lines.append(f"{clean_key}={clean_value}\n")
 
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)

@@ -4,6 +4,15 @@ Flask SOC Application — Main Entry Point
 import os
 import threading
 import urllib.parse
+import warnings
+
+# Suppress noisy cryptographic algorithm deprecation warnings from Scapy imports
+warnings.filterwarnings("ignore", category=UserWarning, module="scapy")
+try:
+    from cryptography.utils import CryptographyDeprecationWarning
+    warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
+except ImportError:
+    pass
 
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -142,15 +151,27 @@ def _seed_admin() -> None:
     """
     Create the built-in seed_admin superuser if not already present.
     Credentials are read from environment variables (set in .env).
-    Change the password immediately after first login.
     """
     username = os.environ.get('SEED_ADMIN_USERNAME', 'seed_admin')
     email    = os.environ.get('SEED_ADMIN_EMAIL',    'admin@soc.local')
-    password = os.environ.get('SEED_ADMIN_PASSWORD', 'Admin@SOC2024!')
+    password = os.environ.get('SEED_ADMIN_PASSWORD')
 
     from models import User, UserRole, Role
     if User.query.filter_by(username=username).first():
         return
+
+    if not password:
+        import secrets
+        password = secrets.token_urlsafe(16)
+        import logging
+        logging.getLogger("soc.auth").warning(
+            "\n" + "=" * 60 + "\n"
+            "[SECURITY ALERT] SEED_ADMIN_PASSWORD was not configured in .env.\n"
+            f"Generated one-time random initial password for '{username}': {password}\n"
+            "Set SEED_ADMIN_PASSWORD in your .env or change it immediately.\n"
+            + "=" * 60
+        )
+
     # pyrefly: ignore
     admin = User(
         username       = username,
@@ -173,9 +194,13 @@ def create_app():
     app = Flask(__name__)
 
     # ── Core config ────────────────────────────────────────────────────────────
-    app.config["SECRET_KEY"] = os.environ.get(
-        "SECRET_KEY", "dev-secret-key-change-in-production-!@#"
-    )
+    secret_key = os.environ.get("SECRET_KEY")
+    if not secret_key:
+        if os.environ.get("FLASK_ENV") == "production":
+            raise RuntimeError("CRITICAL SECURITY ERROR: SECRET_KEY environment variable is required in production mode.")
+        import secrets
+        secret_key = secrets.token_hex(32)
+    app.config["SECRET_KEY"] = secret_key
     custom_db_uri = os.environ.get("SQLALCHEMY_DATABASE_URI")
     if custom_db_uri:
         app.config["SQLALCHEMY_DATABASE_URI"] = custom_db_uri
@@ -190,6 +215,10 @@ def create_app():
         )
         app.config["SQLALCHEMY_DATABASE_URI"] = f"mssql+pyodbc:///?odbc_connect={_odbc}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
 
     # Session hardening
     app.config["PERMANENT_SESSION_LIFETIME"]  = 86400 * 7   # 7 days (was 30)
@@ -234,7 +263,9 @@ def create_app():
 
     with app.app_context():
         try:
+            print("[SOC Database] Connecting and verifying database tables...")
             db.create_all()
+            print("[SOC Database] Database schema verified.")
         except Exception as _db_err:
             import logging
             logging.getLogger("soc.database").warning(
@@ -255,20 +286,25 @@ def create_app():
             db.session.remove()
             db.create_all()
 
-        # SQL Server migration: add approval columns if running on MSSQL
-        if db.engine.dialect.name == "mssql":
-            from sqlalchemy import text as _text
-            _approval_cols = [
-                "ALTER TABLE users ADD is_approved BIT NOT NULL DEFAULT 0",
-                "ALTER TABLE users ADD requested_role NVARCHAR(20) NULL",
-            ]
-            with db.engine.connect() as _conn:
-                for _sql in _approval_cols:
-                    try:
-                        _conn.execute(_text(_sql))
+        # Schema migrations: ensure approval & session_version columns exist across dialects
+        try:
+            from sqlalchemy import inspect as _insp, text as _text
+            _inspector = _insp(db.engine)
+            if "users" in _inspector.get_table_names():
+                _cols = {c["name"] for c in _inspector.get_columns("users")}
+                with db.engine.connect() as _conn:
+                    if "session_version" not in _cols:
+                        _conn.execute(_text("ALTER TABLE users ADD session_version INT NOT NULL DEFAULT 1"))
                         _conn.commit()
-                    except Exception:
-                        pass
+                    if db.engine.dialect.name == "mssql":
+                        if "is_approved" not in _cols:
+                            _conn.execute(_text("ALTER TABLE users ADD is_approved BIT NOT NULL DEFAULT 0"))
+                            _conn.commit()
+                        if "requested_role" not in _cols:
+                            _conn.execute(_text("ALTER TABLE users ADD requested_role NVARCHAR(20) NULL"))
+                            _conn.commit()
+        except Exception:
+            pass
 
         _seed_rbac()          # idempotent — safe to run on every startup
         _seed_admin()         # creates seed_admin superuser if absent
@@ -347,7 +383,7 @@ def create_app():
         h["Permissions-Policy"]        = "geolocation=(), microphone=(), camera=()"
         h["Content-Security-Policy"]   = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.socket.io https://cdnjs.cloudflare.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io https://cdnjs.cloudflare.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com data:; "
             "img-src 'self' data: blob:; "
@@ -425,7 +461,14 @@ def create_app():
 
 
 if __name__ == "__main__":
+    print("\n" + "=" * 60)
+    print("  [*] Autonomous SOC Platform - Starting initialization...")
+    print("=" * 60 + "\n")
     app = create_app()
+    print("\n" + "=" * 60)
+    print("  [✓] Autonomous SOC Platform is READY!")
+    print("  [✓] Access Dashboard at: http://127.0.0.1:5000")
+    print("=" * 60 + "\n")
     # Use socketio.run() so WebSocket clients can connect alongside HTTP polling
     socketio.run(app, host="0.0.0.0", port=5000, debug=False,
                  allow_unsafe_werkzeug=True)

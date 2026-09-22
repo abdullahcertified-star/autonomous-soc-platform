@@ -331,7 +331,7 @@ def get_agent_status() -> dict:
 
 # ── Google GenAI Client Engine ────────────────────────────────────────────────
 
-def _execute_gemini_agent(prompt: str, history: list = None) -> dict:
+def _execute_gemini_agent(prompt: str, history: list = None, user_perms: dict = None) -> dict:
     """Executes prompt using Google GenAI SDK with Automatic Function Calling."""
     from google import genai
     from google.genai import types
@@ -341,14 +341,20 @@ def _execute_gemini_agent(prompt: str, history: list = None) -> dict:
 
     tools_list = [
         tool_lookup_ip,
-        tool_block_ip,
-        tool_unblock_ip,
         tool_get_active_incidents,
         tool_query_traffic_logs,
         tool_check_threat_intel,
-        tool_create_security_case,
         tool_get_system_security_posture
     ]
+
+    # Enforce least-privilege tool binding based on caller RBAC permissions (SEC-02)
+    can_fw = user_perms.get("can_firewall_write", False) if user_perms else False
+    can_cases = user_perms.get("can_cases_write", False) if user_perms else False
+
+    if can_fw:
+        tools_list.extend([tool_block_ip, tool_unblock_ip])
+    if can_cases:
+        tools_list.append(tool_create_security_case)
 
     system_instruction = (
         "You are SOCO, an autonomous AI Security Operations Center (SOC) Analyst and intelligent conversational assistant "
@@ -431,7 +437,7 @@ def _execute_gemini_agent(prompt: str, history: list = None) -> dict:
 
 # ── Local Heuristic Fallback Engine ──────────────────────────────────────────
 
-def _execute_heuristic_agent(prompt: str) -> dict:
+def _execute_heuristic_agent(prompt: str, user_perms: dict = None) -> dict:
     """
     Intelligent local heuristic agent and chatbot with guardrails.
     Parses user intent, enforces domain and safety guardrails, provides conversational
@@ -482,21 +488,19 @@ def _execute_heuristic_agent(prompt: str) -> dict:
     if any(re.search(pat, lower) for pat in greeting_patterns):
         return {
             "response": (
-                "Hello! I am **SOCO**, your AI Security Operations Analyst.\n\n"
-                "I'm actively monitoring network telemetry and firewall posture. How can I assist you?\n\n"
-                "**Quick Capabilities:**\n"
-                "• **Investigate Host:** *\"Investigate 192.168.1.50\"*\n"
-                "• **Audit Attacks:** *\"Check active attacks\"*\n"
-                "• **Firewall Containment:** *\"Block 45.33.32.156\"*\n"
-                "• **Traffic Inspection:** *\"Show recent traffic logs\"*\n"
-                "• **Security Questions:** *\"What is an ARP spoofing attack?\"*"
+                "Hello! I am **SOCO**, your AI SOC Analyst Copilot on duty.\n\n"
+                "I am monitoring telemetry, active attacks, and firewall rules in real-time. "
+                "How can I assist your investigation today?\n\n"
+                "• Ask: *\"Investigate <IP>\"* to assess threat score.\n"
+                "• Ask: *\"Check active attacks\"* for current incidents.\n"
+                "• Ask: *\"Show recent traffic logs\"* for packet flow."
             ),
             "tool_calls": [],
             "model": "local-heuristic-v1",
             "status": "success"
         }
 
-    # ── INTENT: Capabilities / Help / Identity (NO TOOLS CALLED) ───────────────
+    # ── INTENT: Capabilities / Help (NO TOOLS CALLED) ──────────────────────────
     if any(k in lower for k in ["who are you", "what can you do", "help", "capabilities", "what are your tools"]):
         return {
             "response": (
@@ -548,8 +552,21 @@ def _execute_heuristic_agent(prompt: str) -> dict:
                     "### 🛡️ Network Service Scanning (MITRE T1046)\n"
                     "• **Concept:** Reconnaissance technique where adversaries probe ports to discover active services and vulnerabilities.\n"
                     "• **Detection:** Rapid SYN or connect attempts across consecutive port ranges from a single host.\n"
-                    "• **SOCO Action:** Automatically latches scanning IPs and enables one-click quarantine.\n\n"
-                    "* **Next Step:** Say *\"Check active attacks\"* to see if any port scans were detected."
+                    "• **SOCO Defense:** Automatic port scan detection threshold and dynamic source IP quarantine.\n\n"
+                    "* **Next Step:** Say *\"Check active attacks\"* to inspect scan alerts."
+                ),
+                "tool_calls": [],
+                "model": "local-heuristic-v1",
+                "status": "success"
+            }
+        else:
+            return {
+                "response": (
+                    f"### 🛡️ Cybersecurity Analysis\n"
+                    f"You inquired about *\"{clean_p}\"*.\n\n"
+                    f"In SOC operations, defense-in-depth requires multi-layered telemetry: packet capture at the edge, "
+                    f"host-level inspection, behavioral anomaly detection, and automated containment through the firewall.\n\n"
+                    f"* **Next Step:** Ask to inspect live attacks or audit any specific suspicious IP."
                 ),
                 "tool_calls": [],
                 "model": "local-heuristic-v1",
@@ -558,6 +575,14 @@ def _execute_heuristic_agent(prompt: str) -> dict:
 
     # ── AGENTIC INTENT 1: Block IP ─────────────────────────────────────────────
     if "block" in lower and "unblock" not in lower and ip_matches:
+        can_fw = user_perms.get("can_firewall_write", False) if user_perms else False
+        if not can_fw:
+            return {
+                "response": "⛔ **Permission Denied:** Your role does not have permission to execute firewall blocks (`firewall:write` required).",
+                "tool_calls": [],
+                "model": "local-heuristic-v1",
+                "status": "denied"
+            }
         for target_ip in ip_matches:
             if _is_protected_ip(target_ip):
                 response_paragraphs.append(
@@ -587,6 +612,14 @@ def _execute_heuristic_agent(prompt: str) -> dict:
 
     # ── AGENTIC INTENT 2: Unblock IP ───────────────────────────────────────────
     elif "unblock" in lower and ip_matches:
+        can_fw = user_perms.get("can_firewall_write", False) if user_perms else False
+        if not can_fw:
+            return {
+                "response": "⛔ **Permission Denied:** Your role does not have permission to execute firewall unblocks (`firewall:write` required).",
+                "tool_calls": [],
+                "model": "local-heuristic-v1",
+                "status": "denied"
+            }
         for target_ip in ip_matches:
             res = tool_unblock_ip(target_ip)
             executed_tools.append({"name": "unblock_ip", "args": {"ip": target_ip}, "result": res})
@@ -691,21 +724,46 @@ def _execute_heuristic_agent(prompt: str) -> dict:
 
 # ── Public API: Copilot Chat ─────────────────────────────────────────────────
 
-def chat(prompt: str, history: list = None) -> dict:
+def chat(prompt: str, history: list = None, user_perms: dict = None) -> dict:
     """
     Primary analyst entrypoint: processes analyst prompt, executes tool calls,
     and returns reasoned findings. Uses Gemini 2.5 Flash if configured, else Heuristic agent.
+    Enforces deterministic RBAC gating on mutating security operations (SEC-02).
     """
+    clean_prompt = (prompt or "").strip()
+    lower = clean_prompt.lower()
+
+    # Upfront deterministic RBAC check for mutating firewall commands (SEC-02)
+    if user_perms and not user_perms.get("can_firewall_write", False):
+        ip_matches = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', clean_prompt)
+        if ip_matches and any(k in lower for k in ["block", "drop", "ban", "blacklist", "unblock", "quarantine"]):
+            return {
+                "response": "⛔ **Permission Denied:** Your account role does not possess permission to execute firewall actions (`firewall:write` required).",
+                "tool_calls": [],
+                "model": "guardrail-authz",
+                "status": "denied"
+            }
+
+    # Upfront deterministic RBAC check for ticket / case creation
+    if user_perms and not user_perms.get("can_cases_write", False):
+        if any(k in lower for k in ["create case", "open case", "new case", "make case", "create ticket"]):
+            return {
+                "response": "⛔ **Permission Denied:** Your account role does not possess permission to create or modify cases (`cases:write` required).",
+                "tool_calls": [],
+                "model": "guardrail-authz",
+                "status": "denied"
+            }
+
     key = _get_gemini_api_key()
     if key and len(key) > 5:
         try:
-            return _execute_gemini_agent(prompt, history)
+            return _execute_gemini_agent(prompt, history, user_perms=user_perms)
         except Exception as e:
-            fallback = _execute_heuristic_agent(prompt)
+            fallback = _execute_heuristic_agent(prompt, user_perms=user_perms)
             fallback["warning"] = f"Gemini API returned error ({e}); handled by Heuristic fallback."
             return fallback
 
-    return _execute_heuristic_agent(prompt)
+    return _execute_heuristic_agent(prompt, user_perms=user_perms)
 
 
 # ── Autonomous Workflows ─────────────────────────────────────────────────────

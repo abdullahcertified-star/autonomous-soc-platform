@@ -252,14 +252,13 @@ def login():
         # Approval gate — account exists but admin hasn't approved yet
         if user and not user.is_approved:
             _record_login(user, identifier, False, 'pending_approval')
-            flash('Your account is pending admin approval. Please wait.', 'warning')
+            flash('Invalid email/username or password.', 'error')
             return render_template('login.html')
 
         # Account-level lockout
         if user and user.is_locked():
-            remaining = int((user.locked_until - datetime.utcnow()).total_seconds())
             _record_login(user, identifier, False, 'account_locked')
-            flash(f'Account locked. Try again in {remaining} seconds.', 'error')
+            flash('Invalid email/username or password.', 'error')
             return render_template('login.html')
 
         # If previous lockout window has expired, reset counter
@@ -286,6 +285,7 @@ def login():
             # Record this login and store its ID for logout tracking
             hist_id = _record_login(user, identifier, True)
             session['_login_history_id'] = hist_id
+            session['_session_version'] = getattr(user, 'session_version', 1) or 1
 
             login_user(user, remember=remember)
             session.permanent = True
@@ -304,15 +304,12 @@ def login():
                 if user.failed_login_attempts >= 5:
                     user.locked_until = datetime.utcnow() + timedelta(minutes=15)
                     _record_login(user, identifier, False, 'account_locked')
-                    flash('Too many failed attempts. Account locked for 15 minutes.', 'error')
                 else:
-                    remaining_before_lock = 5 - user.failed_login_attempts
                     _record_login(user, identifier, False, 'wrong_password')
-                    flash(f'Invalid credentials. {remaining_before_lock} attempts before account lock.', 'error')
                 db.session.commit()
             else:
                 _record_login(None, identifier, False, 'not_found')
-                flash('Invalid email/username or password.', 'error')
+            flash('Invalid email/username or password.', 'error')
 
     return render_template('login.html')
 
@@ -357,10 +354,9 @@ def forgot_password():
             user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
             db.session.commit()
 
-            # In production, email the link. Log on the server for development/audit purposes.
-            reset_url = url_for('auth.reset_password', token=token, _external=True)
+            # In production, email the link. Log event safely without leaking the token or reset URL.
             import logging
-            logging.getLogger(__name__).info("[AUTH] Password reset requested for %s: %s", email, reset_url)
+            logging.getLogger(__name__).info("[AUTH] Password reset requested for %s", email)
 
         return redirect(url_for('auth.login'))
 
@@ -393,6 +389,7 @@ def reset_password(token):
         user.reset_token_expiry = None
         user.failed_login_attempts = 0
         user.locked_until = None
+        user.session_version = (getattr(user, 'session_version', 1) or 1) + 1
         db.session.commit()
 
         flash('Password updated successfully. Please log in.', 'success')

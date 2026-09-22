@@ -25,6 +25,7 @@ class User(UserMixin, db.Model):
     locked_until = db.Column(db.DateTime, nullable=True)
     reset_token = db.Column(db.String(100), nullable=True)
     reset_token_expiry = db.Column(db.DateTime, nullable=True)
+    session_version = db.Column(db.Integer, default=1, nullable=False, server_default='1')
 
     # Enterprise: role-based access (admin / analyst / viewer)
     role = db.Column(db.String(20), default='analyst', nullable=False)
@@ -120,9 +121,18 @@ class User(UserMixin, db.Model):
 
 @login_manager.user_loader
 def load_user(user_id: str):
-    user = User.query.get(int(user_id))
+    from flask import session as _flask_session
+    try:
+        user = db.session.get(User, int(user_id))
+    except Exception:
+        return None
     if user and not user.is_approved:
         return None
+    if user:
+        sess_ver = _flask_session.get('_session_version')
+        expected_ver = getattr(user, 'session_version', 1) or 1
+        if sess_ver is not None and sess_ver != expected_ver:
+            return None  # Invalidate session if version mismatch
     return user
 
 

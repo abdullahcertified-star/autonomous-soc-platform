@@ -123,7 +123,7 @@ def _get_gateway_info() -> tuple[str, str]:
             return ("", "unknown")
 
         arp_out = subprocess.check_output(
-            f"arp -a {gw_ip}", text=True, stderr=subprocess.DEVNULL, timeout=5
+            ["arp", "-a", gw_ip], text=True, stderr=subprocess.DEVNULL, timeout=5
         )
         mac_m = re.search(r'([0-9a-f]{2}[-:][0-9a-f]{2}[-:][0-9a-f]{2}[-:][0-9a-f]{2}[-:][0-9a-f]{2}[-:][0-9a-f]{2})',
                           arp_out, re.IGNORECASE)

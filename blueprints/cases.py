@@ -133,6 +133,13 @@ def get_case(case_db_id):
 @require_permission('cases', 'write')
 def update_case(case_db_id):
     case = Case.query.get_or_404(case_db_id)
+
+    # Object-level authorization (BOLA prevention, SEC-09)
+    # Non-admin analysts can only update cases that are unassigned or assigned to them
+    if getattr(current_user, 'role', None) != 'admin':
+        if case.assigned_to_id and case.assigned_to_id != current_user.id:
+            return jsonify({'error': 'Permission denied: case is assigned to another analyst'}), 403
+
     data = request.get_json(silent=True) or {}
 
     if 'status' in data:

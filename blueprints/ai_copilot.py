@@ -38,7 +38,13 @@ def chat():
         return jsonify({"ok": False, "error": "Prompt cannot be empty"}), 400
 
     try:
-        result = ai_agent.chat(prompt, history=history)
+        user_perms = {
+            "can_firewall_write": current_user.can('firewall', 'write') if hasattr(current_user, 'can') else False,
+            "can_cases_write": current_user.can('cases', 'write') if hasattr(current_user, 'can') else False,
+            "username": getattr(current_user, 'username', 'anonymous'),
+            "role": getattr(current_user, 'role', 'viewer'),
+        }
+        result = ai_agent.chat(prompt, history=history, user_perms=user_perms)
         audit("ai_copilot_query", current_user.username, prompt[:80])
         return jsonify({
             "ok": True,
@@ -73,8 +79,14 @@ def investigate_ip():
         return jsonify({"ok": False, "error": "IP is required"}), 400
 
     try:
+        user_perms = {
+            "can_firewall_write": current_user.can('firewall', 'write') if hasattr(current_user, 'can') else False,
+            "can_cases_write": current_user.can('cases', 'write') if hasattr(current_user, 'can') else False,
+            "username": getattr(current_user, 'username', 'anonymous'),
+            "role": getattr(current_user, 'role', 'viewer'),
+        }
         prompt = f"Run a comprehensive security investigation on IP {ip}. Check threat intelligence, packet volume, incidents, and firewall status."
-        result = ai_agent.chat(prompt)
+        result = ai_agent.chat(prompt, user_perms=user_perms)
         return jsonify({
             "ok": True,
             "ip": ip,
