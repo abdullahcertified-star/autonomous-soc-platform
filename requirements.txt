@@ -53,11 +53,14 @@ ordered-set==4.1.0        # Ordered set implementation (Flask-Limiter dep)
 SQLAlchemy==2.0.49        # SQL ORM (Flask-SQLAlchemy dep)
 greenlet==3.5.0           # Coroutine library (SQLAlchemy async dep)
 
-# ── Database Driver — SQL Server (required) ───────────────────────────────────
+# ── Database Drivers (PostgreSQL, SQL Server, MySQL) ──────────────────────────
 pyodbc==5.3.0             # ODBC bridge used by SQLAlchemy's mssql+pyodbc dialect
+psycopg2-binary>=2.9.9    # PostgreSQL binary driver
+pymysql>=1.1.0            # MySQL / MariaDB driver
 #
-# Requires ODBC Driver 18 for SQL Server to be installed at the OS level.
-# See SYSTEM PREREQUISITES at the top of this file.
+# MS SQL Server requires ODBC Driver 18 for SQL Server to be installed at OS level.
+# PostgreSQL and MySQL work out of the box with binary wheels.
+# SQLite requires no driver (built into Python standard library).
 
 # ── Security / Cryptography ───────────────────────────────────────────────────
 bcrypt==4.1.3             # bcrypt password hashing (rounds=12 in models.py)

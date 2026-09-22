@@ -1,0 +1,696 @@
+{% extends "base_soc.html" %}
+{% block title %}Database Engine{% endblock %}
+{% block page_title %}Database Engine Manager{% endblock %}
+
+{% block content %}
+<style>
+  /* Database Manager Styles */
+  .db-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  /* Active Engine Status Card */
+  .db-status-banner {
+    background: linear-gradient(135deg, rgba(17,24,39,0.85) 0%, rgba(15,23,42,0.95) 100%);
+    border: 1px solid rgba(200, 196, 190, 0.15);
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    position: relative;
+    overflow: hidden;
+  }
+  .db-status-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #22c55e, #3b82f6, #a855f7);
+  }
+
+  .status-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .status-badge.healthy {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+  }
+  .status-badge.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+    animation: status-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes status-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .metric-cards-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .db-stat-box {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .db-stat-label {
+    font-size: 10px;
+    color: var(--text-muted, #8a8880);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+  .db-stat-val {
+    font-size: 17px;
+    font-weight: 700;
+    color: #f3f4f6;
+    font-family: monospace;
+  }
+
+  /* Provider Card Selector */
+  .provider-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .provider-card {
+    background: rgba(20, 20, 22, 0.7);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    user-select: none;
+  }
+  .provider-card:hover {
+    border-color: rgba(200,196,190,0.3);
+    background: rgba(30, 30, 34, 0.85);
+    transform: translateY(-2px);
+  }
+  .provider-card.selected {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.12);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.25);
+  }
+  .provider-card.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    font-weight: 900;
+    color: #60a5fa;
+    background: rgba(59, 130, 246, 0.25);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .provider-icon {
+    font-size: 20px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .provider-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #f3f4f6;
+    margin-bottom: 3px;
+  }
+  .provider-desc {
+    font-size: 10.5px;
+    color: #9ca3af;
+    line-height: 1.35;
+  }
+
+  /* Diagnostics Log Box */
+  .diagnostic-box {
+    background: #090a0f;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 14px;
+    margin-top: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s;
+  }
+  .diagnostic-box.success {
+    border-color: rgba(34, 197, 94, 0.45);
+    background: rgba(34, 197, 94, 0.05);
+    color: #86efac;
+  }
+  .diagnostic-box.error {
+    border-color: rgba(239, 68, 68, 0.45);
+    background: rgba(239, 68, 68, 0.05);
+    color: #fca5a5;
+  }
+  .diagnostic-box.testing {
+    border-color: rgba(59, 130, 246, 0.45);
+    background: rgba(59, 130, 246, 0.05);
+    color: #93c5fd;
+  }
+
+  .pw-toggle-btn {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 8px;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .pw-toggle-btn:hover { color: #f3f4f6; }
+</style>
+
+<div class="db-grid">
+
+  <!-- ── 1. Active Database Status Banner ─────────────────────────────────── -->
+  <div class="db-status-banner">
+    <div class="status-header-row">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.18);border:1px solid rgba(59,130,246,0.35);display:flex;align-items:center;justify-content:center;color:#60a5fa;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+        </div>
+        <div>
+          <h2 style="font-size:15px;font-weight:700;margin:0;color:#f3f4f6;">Active Database Engine</h2>
+          <div style="font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px;" id="active-uri-display">
+            {{ info.uri_masked or 'No active database configured' }}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="status-badge {% if info.is_healthy %}healthy{% else %}error{% endif %}" id="active-status-badge">
+          <span class="pulse-dot"></span>
+          <span id="active-status-text">{% if info.is_healthy %}ONLINE ({{ info.dialect|upper }}){% else %}OFFLINE{% endif %}</span>
+        </span>
+        <button class="btn btn-secondary" onclick="pingActiveDb()" id="btn-ping" style="padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:6px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Ping DB
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Metrics -->
+    <div class="metric-cards-row">
+      <div class="db-stat-box">
+        <div class="db-stat-label">Engine Dialect</div>
+        <div class="db-stat-val" id="stat-dialect">{{ info.dialect|upper }}</div>
+      </div>
+      <div class="db-stat-box">
+        <div class="db-stat-label">Roundtrip Latency</div>
+        <div class="db-stat-val" id="stat-latency" style="color:{% if info.latency_ms < 50 %}#4ade80{% else %}#fbbf24{% endif %};">
+          {% if info.latency_ms >= 0 %}{{ info.latency_ms }} ms{% else %}N/A{% endif %}
+        </div>
+      </div>
+      <div class="db-stat-box">
+        <div class="db-stat-label">Total Tables</div>
+        <div class="db-stat-val" id="stat-tables">{{ info.table_count }}</div>
+      </div>
+      <div class="db-stat-box">
+        <div class="db-stat-label">User Accounts</div>
+        <div class="db-stat-val" id="stat-users">{{ info.user_count }}</div>
+      </div>
+      <div class="db-stat-box">
+        <div class="db-stat-label">Incident Cases</div>
+        <div class="db-stat-val" id="stat-cases">{{ info.case_count }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 2. Database Switcher Configuration ───────────────────────────────── -->
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;align-items:center;">
+      <div>
+        <span class="card-title">Switch Database Backend</span>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+          Configure, test, and dynamically rebind the application database without restarting the platform.
+        </div>
+      </div>
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#60a5fa;background:rgba(59,130,246,0.12);padding:3px 8px;border-radius:6px;border:1px solid rgba(59,130,246,0.3);">
+        Zero-Downtime Hot Swap
+      </span>
+    </div>
+
+    <div style="padding:18px 20px;">
+
+      <!-- Provider Selection Cards -->
+      <label class="form-label" style="margin-bottom:10px;display:block;">Select Database Provider</label>
+      <div class="provider-cards">
+        <div class="provider-card selected" onclick="selectProvider('postgresql', this)" id="card-postgres">
+          <span class="provider-icon">🐘</span>
+          <div class="provider-name">PostgreSQL</div>
+          <div class="provider-desc">High concurrency, robust enterprise production backend.</div>
+        </div>
+
+        <div class="provider-card" onclick="selectProvider('mssql', this)" id="card-mssql">
+          <span class="provider-icon">🏢</span>
+          <div class="provider-name">SQL Server</div>
+          <div class="provider-desc">Microsoft SQL Server with Windows / ODBC integration.</div>
+        </div>
+
+        <div class="provider-card" onclick="selectProvider('mysql', this)" id="card-mysql">
+          <span class="provider-icon">🐬</span>
+          <div class="provider-name">MySQL / MariaDB</div>
+          <div class="provider-desc">Fast relational storage with UTF8MB4 full Unicode.</div>
+        </div>
+
+        <div class="provider-card" onclick="selectProvider('sqlite', this)" id="card-sqlite">
+          <span class="provider-icon">🪶</span>
+          <div class="provider-name">SQLite</div>
+          <div class="provider-desc">Zero-config file database. Ideal for local dev and testing.</div>
+        </div>
+
+        <div class="provider-card" onclick="selectProvider('custom', this)" id="card-custom">
+          <span class="provider-icon">🔗</span>
+          <div class="provider-name">Custom URI</div>
+          <div class="provider-desc">Direct connection string (AWS RDS, Neon, Supabase).</div>
+        </div>
+      </div>
+
+      <!-- Config Form -->
+      <div class="soc-form" id="db-config-form">
+
+        <!-- Host & Port Row (Postgres, MSSQL, MySQL) -->
+        <div class="form-row" id="row-host-port">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Database Host / Server</label>
+            <input class="form-input" id="db_host" type="text" placeholder="localhost or db.internal.net" value="localhost" />
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Port</label>
+            <input class="form-input" id="db_port" type="number" placeholder="5432" value="5432" />
+          </div>
+        </div>
+
+        <!-- DB Name, Username, Password (Network DBs) -->
+        <div class="form-row" id="row-credentials">
+          <div class="form-group">
+            <label class="form-label">Database Name</label>
+            <input class="form-input" id="db_name" type="text" placeholder="soc_db" value="soc_db" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input class="form-input" id="db_user" type="text" placeholder="postgres" value="postgres" />
+          </div>
+          <div class="form-group" style="position:relative;">
+            <label class="form-label">Password</label>
+            <div style="position:relative;">
+              <input class="form-input" id="db_pass" type="password" placeholder="••••••••" style="padding-right:55px;" />
+              <button type="button" class="pw-toggle-btn" onclick="togglePasswordVisibility('db_pass', this)">Show</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SQLite Path Row (Only visible for SQLite) -->
+        <div class="form-row" id="row-sqlite" style="display:none;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">SQLite Database File Path</label>
+            <input class="form-input" id="sqlite_path" type="text" placeholder="soc.db or instance/soc.db" value="soc.db" />
+            <div style="font-size:10.5px;color:var(--text-muted);margin-top:4px;">
+              Stored locally on the host machine. Relative paths reside in the application directory.
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom URI Row (Only visible for Custom) -->
+        <div class="form-row" id="row-custom-uri" style="display:none;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Custom SQLAlchemy Connection URI</label>
+            <input class="form-input" id="custom_uri" type="text" placeholder="postgresql://user:pass@host:5432/dbname?sslmode=require" />
+            <div style="font-size:10.5px;color:var(--text-muted);margin-top:4px;">
+              Compatible with PostgreSQL, MySQL, SQL Server, and cloud hosting providers (AWS RDS, Neon, Supabase, Azure SQL).
+            </div>
+          </div>
+        </div>
+
+        <!-- Extra Options Accordion -->
+        <div id="row-extra-options" style="margin-top:6px;">
+          <!-- MSSQL Options -->
+          <div id="options-mssql" style="display:none;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px;margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:700;color:#f3f4f6;margin-bottom:8px;">SQL Server Options</div>
+            <div style="display:flex;gap:18px;flex-wrap:wrap;">
+              <label class="form-toggle" style="margin:0;">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="mssql_trusted" onchange="toggleMssqlTrusted(this.checked)" />
+                  <span class="toggle-track"></span>
+                </label>
+                <span style="font-size:12px;">Windows Integrated Authentication (Trusted_Connection)</span>
+              </label>
+              <label class="form-toggle" style="margin:0;">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="mssql_trust_cert" checked />
+                  <span class="toggle-track"></span>
+                </label>
+                <span style="font-size:12px;">Trust Server Certificate</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Postgres Options -->
+          <div id="options-postgres" style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+            <div class="form-group" style="width:200px;">
+              <label class="form-label">SSL Mode</label>
+              <select class="form-input" id="pg_sslmode">
+                <option value="">Default (prefer)</option>
+                <option value="require">require</option>
+                <option value="verify-ca">verify-ca</option>
+                <option value="verify-full">verify-full</option>
+                <option value="disable">disable</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Migration Checkbox -->
+        <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:12px 14px;margin-top:6px;">
+          <label class="form-toggle" style="margin:0;cursor:pointer;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="clone_data" checked />
+              <span class="toggle-track"></span>
+            </label>
+            <div>
+              <span style="font-size:12.5px;font-weight:600;color:#f3f4f6;display:block;">
+                Port existing user accounts & cases to the new database
+              </span>
+              <span style="font-size:11px;color:#9ca3af;">
+                Automatically copies your active users, RBAC permissions, and existing cases so you don't lose access or history.
+              </span>
+            </div>
+          </label>
+        </div>
+
+        <!-- Diagnostics Console Output -->
+        <div class="diagnostic-box" id="diagnostic-console">
+          <span style="color:#6b7280;">Ready to test connection. Select your database engine and click "Test Connection".</span>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+          <button type="button" class="btn btn-secondary" id="btn-test-connection" onclick="testCandidateConnection()" style="display:flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            Test Connection
+          </button>
+
+          <button type="button" class="btn btn-primary" id="btn-apply-connection" onclick="applyDatabaseSwitch()" style="display:flex;align-items:center;gap:6px;background:#2563eb;border-color:#3b82f6;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save & Switch Database
+          </button>
+
+          <span id="apply-status-text" style="font-size:12px;font-weight:600;display:none;margin-left:8px;"></span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let currentProvider = "postgresql";
+
+const portMap = {
+  postgresql: 5432,
+  mssql: 1433,
+  mysql: 3306,
+  sqlite: null,
+  custom: null
+};
+
+const userMap = {
+  postgresql: "postgres",
+  mssql: "sa",
+  mysql: "root",
+  sqlite: "",
+  custom: ""
+};
+
+function selectProvider(provider, element) {
+  currentProvider = provider;
+  document.querySelectorAll(".provider-card").forEach(el => el.classList.remove("selected"));
+  if (element) element.classList.add("selected");
+
+  const rowHostPort = document.getElementById("row-host-port");
+  const rowCreds = document.getElementById("row-credentials");
+  const rowSqlite = document.getElementById("row-sqlite");
+  const rowCustom = document.getElementById("row-custom-uri");
+  const optMssql = document.getElementById("options-mssql");
+  const optPostgres = document.getElementById("options-postgres");
+
+  // Reset visibility
+  rowHostPort.style.display = "flex";
+  rowCreds.style.display = "flex";
+  rowSqlite.style.display = "none";
+  rowCustom.style.display = "none";
+  optMssql.style.display = "none";
+  optPostgres.style.display = "none";
+
+  if (provider === "sqlite") {
+    rowHostPort.style.display = "none";
+    rowCreds.style.display = "none";
+    rowSqlite.style.display = "flex";
+  } else if (provider === "custom") {
+    rowHostPort.style.display = "none";
+    rowCreds.style.display = "none";
+    rowCustom.style.display = "flex";
+  } else {
+    // Network DBs
+    if (portMap[provider]) {
+      document.getElementById("db_port").value = portMap[provider];
+    }
+    if (userMap[provider] && !document.getElementById("db_user").value) {
+      document.getElementById("db_user").value = userMap[provider];
+    }
+    if (provider === "mssql") {
+      optMssql.style.display = "block";
+    } else if (provider === "postgresql") {
+      optPostgres.style.display = "flex";
+    }
+  }
+
+  // Clear console
+  setDiagnosticConsole("Ready to test connection with " + provider.toUpperCase() + ".", "default");
+}
+
+function toggleMssqlTrusted(isTrusted) {
+  const userField = document.getElementById("db_user");
+  const passField = document.getElementById("db_pass");
+  if (isTrusted) {
+    userField.disabled = true;
+    passField.disabled = true;
+    userField.placeholder = "Windows Integrated Auth";
+  } else {
+    userField.disabled = false;
+    passField.disabled = false;
+    userField.placeholder = "sa";
+  }
+}
+
+function togglePasswordVisibility(fieldId, btn) {
+  const inp = document.getElementById(fieldId);
+  if (inp.type === "password") {
+    inp.type = "text";
+    btn.textContent = "Hide";
+  } else {
+    inp.type = "password";
+    btn.textContent = "Show";
+  }
+}
+
+function setDiagnosticConsole(msg, type) {
+  const box = document.getElementById("diagnostic-console");
+  box.className = "diagnostic-box " + type;
+  box.innerHTML = msg;
+}
+
+function getPayload() {
+  const extra_options = {};
+  if (currentProvider === "postgresql") {
+    const ssl = document.getElementById("pg_sslmode").value;
+    if (ssl) extra_options.sslmode = ssl;
+  } else if (currentProvider === "mssql") {
+    extra_options.trusted_connection = document.getElementById("mssql_trusted").checked;
+    extra_options.trust_server_certificate = document.getElementById("mssql_trust_cert").checked;
+  }
+
+  return {
+    provider: currentProvider,
+    host: document.getElementById("db_host").value.trim(),
+    port: parseInt(document.getElementById("db_port").value.trim(), 10) || null,
+    database: document.getElementById("db_name").value.trim(),
+    username: document.getElementById("db_user").value.trim(),
+    password: document.getElementById("db_pass").value,
+    sqlite_path: document.getElementById("sqlite_path").value.trim(),
+    custom_uri: document.getElementById("custom_uri").value.trim(),
+    extra_options: extra_options,
+    clone_data: document.getElementById("clone_data").checked
+  };
+}
+
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+async function testCandidateConnection() {
+  const btn = document.getElementById("btn-test-connection");
+  btn.disabled = true;
+  btn.innerHTML = `<span style="display:inline-block;animation:spin 1s linear infinite;">↻</span> Testing...`;
+  setDiagnosticConsole("Probing database connectivity (5s timeout)...", "testing");
+
+  try {
+    const resp = await fetch("/api/admin/database/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken()
+      },
+      body: JSON.stringify(getPayload())
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      setDiagnosticConsole(`✓ Connected Successfully! Engine: ${data.dialect.toUpperCase()} | Latency: ${data.latency_ms} ms | Server Version: ${data.version || 'OK'}`, "success");
+    } else {
+      setDiagnosticConsole(`✗ Connection Failed: ${data.error || data.message || 'Unknown error'}`, "error");
+    }
+  } catch (err) {
+    setDiagnosticConsole(`✗ Request Error: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Test Connection`;
+  }
+}
+
+async function applyDatabaseSwitch() {
+  if (!confirm("Are you sure you want to switch the active database? All subsequent platform queries will be routed to the new database.")) {
+    return;
+  }
+
+  const btn = document.getElementById("btn-apply-connection");
+  const statusText = document.getElementById("apply-status-text");
+  btn.disabled = true;
+  btn.innerHTML = `<span style="display:inline-block;animation:spin 1s linear infinite;">↻</span> Initializing & Switching...`;
+  statusText.style.display = "inline";
+  statusText.style.color = "#93c5fd";
+  statusText.textContent = "Bootstrapping tables & rebinding engine...";
+  setDiagnosticConsole("Initializing tables, seeding RBAC, and hot-swapping active engine...", "testing");
+
+  try {
+    const resp = await fetch("/api/admin/database/apply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken()
+      },
+      body: JSON.stringify(getPayload())
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      setDiagnosticConsole(`✓ ${data.message} Active engine re-bound cleanly. Persisted to .env.`, "success");
+      statusText.style.color = "#4ade80";
+      statusText.textContent = "Switched successfully! Refreshing telemetry...";
+      setTimeout(refreshStatus, 1000);
+    } else {
+      setDiagnosticConsole(`✗ Switch Failed: ${data.error || 'Unknown error'}`, "error");
+      statusText.style.color = "#f87171";
+      statusText.textContent = "Switch failed. Active database untouched.";
+    }
+  } catch (err) {
+    setDiagnosticConsole(`✗ Network Exception: ${err.message}`, "error");
+    statusText.style.color = "#f87171";
+    statusText.textContent = "Error communicating with server.";
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save & Switch Database`;
+  }
+}
+
+async function pingActiveDb() {
+  const btn = document.getElementById("btn-ping");
+  btn.disabled = true;
+  btn.textContent = "Pinging...";
+  await refreshStatus();
+  btn.disabled = false;
+  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Ping DB`;
+}
+
+async function refreshStatus() {
+  try {
+    const resp = await fetch("/api/admin/database/status");
+    const info = await resp.json();
+
+    document.getElementById("active-uri-display").textContent = info.uri_masked || "No active DB";
+    document.getElementById("stat-dialect").textContent = (info.dialect || "UNKNOWN").toUpperCase();
+    document.getElementById("stat-latency").textContent = info.latency_ms >= 0 ? `${info.latency_ms} ms` : "N/A";
+    document.getElementById("stat-tables").textContent = info.table_count || 0;
+    document.getElementById("stat-users").textContent = info.user_count || 0;
+    document.getElementById("stat-cases").textContent = info.case_count || 0;
+
+    const badge = document.getElementById("active-status-badge");
+    const badgeText = document.getElementById("active-status-text");
+
+    if (info.is_healthy) {
+      badge.className = "status-badge healthy";
+      badgeText.textContent = `ONLINE (${(info.dialect || '').toUpperCase()})`;
+    } else {
+      badge.className = "status-badge error";
+      badgeText.textContent = "OFFLINE";
+    }
+  } catch (err) {
+    console.error("Failed to refresh DB status:", err);
+  }
+}
+</script>
+{% endblock %}

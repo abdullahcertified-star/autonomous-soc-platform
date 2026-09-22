@@ -236,20 +236,42 @@ def create_app():
     app.register_blueprint(ai_copilot_bp)
 
     with app.app_context():
-        db.create_all()
-        # SQL Server migration: add approval columns if not yet present
-        from sqlalchemy import text as _text
-        _approval_cols = [
-            "ALTER TABLE users ADD is_approved BIT NOT NULL DEFAULT 0",
-            "ALTER TABLE users ADD requested_role NVARCHAR(20) NULL",
-        ]
-        with db.engine.connect() as _conn:
-            for _sql in _approval_cols:
-                try:
-                    _conn.execute(_text(_sql))
-                    _conn.commit()
-                except Exception:
-                    pass
+        try:
+            db.create_all()
+        except Exception as _db_err:
+            import logging
+            logging.getLogger("soc.database").warning(
+                f"[SOC Database] Failed to connect to configured database: {_db_err}. "
+                "Falling back to local SQLite so the platform remains accessible."
+            )
+            fallback_uri = "sqlite:///soc.db"
+            app.config["SQLALCHEMY_DATABASE_URI"] = fallback_uri
+            from sqlalchemy import create_engine as _ce
+            if hasattr(app, "extensions") and "sqlalchemy" in app.extensions:
+                old_eng = app.extensions["sqlalchemy"].engines.get(None)
+                if old_eng:
+                    try:
+                        old_eng.dispose()
+                    except Exception:
+                        pass
+                app.extensions["sqlalchemy"].engines[None] = _ce(fallback_uri)
+            db.session.remove()
+            db.create_all()
+
+        # SQL Server migration: add approval columns if running on MSSQL
+        if db.engine.dialect.name == "mssql":
+            from sqlalchemy import text as _text
+            _approval_cols = [
+                "ALTER TABLE users ADD is_approved BIT NOT NULL DEFAULT 0",
+                "ALTER TABLE users ADD requested_role NVARCHAR(20) NULL",
+            ]
+            with db.engine.connect() as _conn:
+                for _sql in _approval_cols:
+                    try:
+                        _conn.execute(_text(_sql))
+                        _conn.commit()
+                    except Exception:
+                        pass
 
         _seed_rbac()          # idempotent — safe to run on every startup
         _seed_admin()         # creates seed_admin superuser if absent

@@ -660,3 +660,128 @@ def admin_change_role(user_id):
         db.session.rollback()
         flash(f'Failed to change role for "{user.username}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DYNAMIC DATABASE MANAGEMENT & ENGINE SWITCHER (ADMIN ONLY)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@settings_bp.route("/admin/database")
+@login_required
+def admin_database():
+    """Renders the in-app Database Management & Switcher dashboard."""
+    if not _is_admin():
+        abort(403)
+    from flask import current_app
+    from core.db_manager import get_active_database_info
+    info = get_active_database_info(current_app)
+    return render_template("admin_database.html", info=info)
+
+
+@settings_bp.route("/api/admin/database/status", methods=["GET"])
+@login_required
+def api_admin_database_status():
+    """Returns active database metrics, connection health, and ping latency."""
+    if not _is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+    from flask import current_app
+    from core.db_manager import get_active_database_info
+    return jsonify(get_active_database_info(current_app))
+
+
+@settings_bp.route("/api/admin/database/test", methods=["POST"])
+@login_required
+def api_admin_database_test():
+    """Tests a candidate database connection without touching the active engine."""
+    if not _is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+    from core.db_manager import build_connection_uri, test_db_connection
+    data = request.get_json(silent=True) or {}
+    uri = data.get("uri")
+    if not uri:
+        provider = data.get("provider", "")
+        host = data.get("host", "")
+        port = data.get("port")
+        if port:
+            try:
+                port = int(port)
+            except (ValueError, TypeError):
+                port = None
+        db_name = data.get("database", "")
+        username = data.get("username", "")
+        password = data.get("password", "")
+        sqlite_path = data.get("sqlite_path", "")
+        custom_uri = data.get("custom_uri", "")
+        extra_options = data.get("extra_options", {})
+        try:
+            uri = build_connection_uri(
+                provider=provider,
+                host=host,
+                port=port,
+                database=db_name,
+                username=username,
+                password=password,
+                sqlite_path=sqlite_path,
+                custom_uri=custom_uri,
+                extra_options=extra_options,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    result = test_db_connection(uri)
+    return jsonify(result)
+
+
+@settings_bp.route("/api/admin/database/apply", methods=["POST"])
+@login_required
+def api_admin_database_apply():
+    """
+    Applies the new database configuration:
+    1. Tests connectivity.
+    2. Initializes tables and seeds RBAC/Admin.
+    3. Rebinds the SQLAlchemy engine at runtime.
+    4. Updates .env for persistent restarts.
+    """
+    if not _is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+    from flask import current_app
+    from core.db_manager import build_connection_uri, switch_database
+    data = request.get_json(silent=True) or {}
+    uri = data.get("uri")
+    clone_data = bool(data.get("clone_data", False))
+
+    if not uri:
+        provider = data.get("provider", "")
+        host = data.get("host", "")
+        port = data.get("port")
+        if port:
+            try:
+                port = int(port)
+            except (ValueError, TypeError):
+                port = None
+        db_name = data.get("database", "")
+        username = data.get("username", "")
+        password = data.get("password", "")
+        sqlite_path = data.get("sqlite_path", "")
+        custom_uri = data.get("custom_uri", "")
+        extra_options = data.get("extra_options", {})
+        try:
+            uri = build_connection_uri(
+                provider=provider,
+                host=host,
+                port=port,
+                database=db_name,
+                username=username,
+                password=password,
+                sqlite_path=sqlite_path,
+                custom_uri=custom_uri,
+                extra_options=extra_options,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    app_obj = current_app._get_current_object()
+    result = switch_database(app_obj, uri, clone_data=clone_data)
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
+
