@@ -56,7 +56,7 @@
   <div class="heat-bar-wrap" style="height:12px;">
     <div class="heat-bar-fill" id="heat-fill" style="width:0%;background:#22c55e;"></div>
   </div>
-  <div style="display:flex;justify-content:space-between;font-size:10px;color:#3a3836;margin-top:4px;">
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:4px;">
     <span>0</span><span>LOW</span><span>MEDIUM</span><span>HIGH</span><span>CRITICAL</span>
   </div>
 </div>
@@ -75,7 +75,7 @@
     <span class="card-title">Network Devices</span>
     <span id="dev-count" style="font-size:11px;font-family:var(--font-mono);color:#8a8880;">scanning…</span>
   </div>
-  <div style="font-size:11px;color:#3a3836;margin-bottom:10px;padding:0 2px;">
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:0 2px;">
     Devices discovered via ARP broadcasts. Packet capture only shows traffic TO/FROM this host — switched networks physically prevent seeing other devices' unicast traffic without port mirroring.
   </div>
   <div style="overflow-x:auto;">
@@ -91,7 +91,7 @@
         </tr>
       </thead>
       <tbody id="devices-tbody">
-        <tr><td colspan="6" style="padding:16px 8px;color:#3a3836;text-align:center;">Scanning LAN for devices…</td></tr>
+        <tr><td colspan="6" style="padding:16px 8px;color:var(--text-muted);text-align:center;">Scanning LAN for devices…</td></tr>
       </tbody>
     </table>
   </div>
@@ -121,8 +121,8 @@ function initChart() {
       animation: false, responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' } },
-        y: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' }, beginAtZero: true }
+        x: { ticks: { color: '#8a8880' }, grid: { color: 'rgba(30,30,30,.4)' } },
+        y: { ticks: { color: '#8a8880' }, grid: { color: 'rgba(30,30,30,.4)' }, beginAtZero: true }
       }
     }
   });
@@ -209,7 +209,7 @@ const SOURCE_COLOR = {
 function renderDevices(devices) {
   const tbody = document.getElementById('devices-tbody');
   if (!devices || devices.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px 8px;color:#3a3836;text-align:center;">No devices found yet — ARP scan runs every 60 s</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px 8px;color:var(--text-muted);text-align:center;">No devices found yet — ARP scan runs every 60 s</td></tr>';
     return;
   }
   tbody.innerHTML = devices.map(d => {
@@ -226,7 +226,7 @@ function renderDevices(devices) {
       <td style="padding:7px 8px;">
         <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;">${src}</span>
       </td>
-      <td style="padding:7px 8px;color:#3a3836;font-size:11px;">${d.last_seen || '—'}</td>
+      <td style="padding:7px 8px;color:var(--text-muted);font-size:11px;">${d.last_seen || '—'}</td>
     </tr>`;
   }).join('');
 }

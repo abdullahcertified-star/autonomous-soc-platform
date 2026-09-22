@@ -195,7 +195,12 @@ function getCsrf() {
   return document.querySelector('meta[name="csrf-token"]')?.content || '';
 }
 function escHtml(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 // ── Mode selection ────────────────────────────────────────────────────────────
@@ -314,8 +319,15 @@ async function exportPDF() {
     document.head.appendChild(s);
   });
   try {
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    if (!window.jspdf) {
+      try {
+        await loadScript('/static/jspdf.umd.min.js');
+        await loadScript('/static/jspdf.plugin.autotable.min.js');
+      } catch(_) {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+      }
+    }
   } catch (e) {
     if (btn) { btn.textContent = '⬇ PDF Report'; btn.disabled = false; }
     alert('Failed to load PDF library — check internet connection.');

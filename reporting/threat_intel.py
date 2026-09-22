@@ -1,4 +1,4 @@
-﻿"""
+"""
 threat_intel.py — Threat Intelligence Engine
 
 Features:
@@ -47,6 +47,14 @@ _STATIC_BAD: dict = {
 # Loaded from DB at startup + refreshed periodically
 _db_iocs: dict = {}   # {ip_value: ioc_dict}
 _db_loaded = False
+_app_instance = None
+
+
+def init_threat_intel(app) -> None:
+    """Store app reference and perform initial IOC load."""
+    global _app_instance
+    _app_instance = app
+    _load_db_iocs()
 
 
 def _load_db_iocs() -> None:
@@ -54,22 +62,32 @@ def _load_db_iocs() -> None:
     try:
         from models import IOCEntry
         from extensions import db
-        import flask
-        app = flask.current_app._get_current_object()
-        with app.app_context():
-            entries = IOCEntry.query.filter_by(ioc_type='ip', active=True).all()
-            _db_iocs = {e.value: e.to_dict() for e in entries}
-            _db_loaded = True
+        app = _app_instance
+        if not app:
+            try:
+                import flask
+                app = flask.current_app._get_current_object()
+            except Exception:
+                app = None
+        if app:
+            with app.app_context():
+                entries = IOCEntry.query.filter_by(ioc_type='ip', active=True).all()
+                _db_iocs = {e.value: e.to_dict() for e in entries}
+                _db_loaded = True
     except Exception:
         pass
 
 
-def _start_refresh_thread() -> None:
+def _start_refresh_thread(app=None) -> None:
+    global _app_instance
+    if app:
+        _app_instance = app
     def _loop():
         while True:
             time.sleep(300)
             _load_db_iocs()
     threading.Thread(target=_loop, daemon=True).start()
+
 
 
 # ── AbuseIPDB lookup ──────────────────────────────────────────────────────────
@@ -155,9 +173,16 @@ def check_ip(ip: str) -> dict | None:
             "type":     "THREAT_INTEL",
             "ip":       ip,
             "severity": "HIGH" if result["confidence"] >= 75 else "MEDIUM",
-            "msg":      f"IOC match: {ip} — {result.get('threat')} (score {result['confidence']})",
+            "msg":      f"IOC match: {ip} - {result.get('threat')} (score {result['confidence']})",
             "time":     ts(),
         })
+    else:
+        # Autonomous Agentic AI background enrichment for uncatalogued external IP
+        try:
+            from core import ai_agent
+            ai_agent.enrich_ip(ip)
+        except Exception:
+            pass
 
     return result
 

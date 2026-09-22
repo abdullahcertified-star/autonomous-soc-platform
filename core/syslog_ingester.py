@@ -1,4 +1,4 @@
-﻿"""
+"""
 syslog_ingester.py — UDP Syslog Listener (RFC 3164 / RFC 5424)
 
 Listens on UDP port 514 (configurable) and ingests syslog messages.
@@ -20,14 +20,15 @@ import time
 from collections import deque
 from datetime import datetime
 
+import os
 from core.database import log_event
 
 # ── In-memory ring buffer ─────────────────────────────────────────────────────
 syslog_events: deque = deque(maxlen=1000)
 _lock = threading.Lock()
 
-SYSLOG_PORT    = 514
-SYSLOG_BIND    = '0.0.0.0'
+SYSLOG_PORT    = int(os.environ.get('SYSLOG_PORT', '514'))
+SYSLOG_BIND    = os.environ.get('SYSLOG_HOST', os.environ.get('SYSLOG_BIND', '0.0.0.0'))
 MAX_MSG_BYTES  = 4096
 
 # RFC 3164 month abbreviations

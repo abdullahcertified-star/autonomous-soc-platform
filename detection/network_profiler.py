@@ -1,4 +1,4 @@
-﻿"""
+"""
 network_profiler.py — Automatic Network Profile Detection & Dynamic Threshold Tuning
 
 Runs once at startup after a 60-second baseline measurement window.
@@ -67,6 +67,12 @@ _state: dict = {
 def get_state() -> dict:
     with _lock:
         return dict(_state)
+
+
+def is_ready() -> bool:
+    """Return True once the network baseline learning phase is complete and thresholds are applied."""
+    with _lock:
+        return _state.get("status") == "applied"
 
 
 def _upd(key, value) -> None:
@@ -256,12 +262,14 @@ def _apply(profile: str, baseline_avg: float) -> None:
 # ── Background runner ─────────────────────────────────────────────────────────
 
 def _run() -> None:
+    import os
+    baseline_sec = int(os.environ.get("PROFILER_BASELINE_SECONDS", "60"))
     _upd("status", "learning")
-    print("[Profiler] 60-second baseline measurement started ...")
+    print(f"[Profiler] {baseline_sec}-second baseline measurement started ...")
 
-    baseline_avg = _measure_baseline(60)
+    baseline_avg = _measure_baseline(baseline_sec)
     _upd("baseline_avg", round(baseline_avg, 1))
-    print(f"[Profiler] Baseline: {baseline_avg:.0f} pkt/5s (median over 60 s)")
+    print(f"[Profiler] Baseline: {baseline_avg:.0f} pkt/5s (median over {baseline_sec} s)")
 
     _upd("status", "detecting")
 

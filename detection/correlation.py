@@ -1,4 +1,4 @@
-﻿"""
+"""
 correlation.py — MITRE ATT&CK Mapping + Correlation Rules Engine
 
 Two responsibilities:
@@ -145,12 +145,12 @@ def seed_default_rules(app) -> None:
 
 # ── Rule evaluation ───────────────────────────────────────────────────────────
 
-def _eval_rule(rule, app) -> bool:
-    """Evaluate one rule against live sniffer state. Returns True if it fires."""
+def _eval_rule(rule, app) -> tuple[bool, dict]:
+    """Evaluate one rule against live sniffer state. Returns (True, match_info) if it fires."""
     try:
         cond = json.loads(rule.conditions)
     except (json.JSONDecodeError, TypeError):
-        return False
+        return False, {}
 
     source = cond.get("source", "")
 
@@ -163,11 +163,18 @@ def _eval_rule(rule, app) -> bool:
             field  = cond.get("field", "ports_scanned")
             op     = cond.get("op", "gt")
             val    = cond.get("value", 0)
-            for e in events:
+            for e in reversed(events):
                 ev_val = e.get(field, 0)
-                if op == "gt"  and ev_val > val:  return True
-                if op == "gte" and ev_val >= val: return True
-                if op == "eq"  and ev_val == val: return True
+                matched = False
+                if op == "gt"  and ev_val > val:  matched = True
+                elif op == "gte" and ev_val >= val: matched = True
+                elif op == "eq"  and ev_val == val: matched = True
+                if matched:
+                    return True, {
+                        "src_ip": e.get("src_ip"),
+                        "ports_scanned": ev_val,
+                        "extra": f"Ports scanned: {ev_val} (Type: {e.get('scan_type', 'SYN')})"
+                    }
 
         elif source == "arp_events":
             events  = list(sniffer.arp_events)
@@ -176,29 +183,48 @@ def _eval_rule(rule, app) -> bool:
             cutoff  = time.time() - win_sec
             for e in events:
                 ip = e.get("src_ip", "")
-                by_ip[ip] = by_ip.get(ip, 0) + 1
+                if ip:
+                    by_ip[ip] = by_ip.get(ip, 0) + 1
             threshold = cond.get("count", 3)
-            return any(v >= threshold for v in by_ip.values())
+            for ip, cnt in by_ip.items():
+                if cnt >= threshold:
+                    return True, {"src_ip": ip, "count": cnt, "extra": f"{cnt} ARP anomalies"}
 
         elif source == "beaconing_events":
-            return bool(beaconing.beaconing_events)
+            if beaconing.beaconing_events:
+                ev = beaconing.beaconing_events[0]
+                return True, {
+                    "src_ip": ev.get("src_ip"),
+                    "dst_ip": ev.get("dst_ip"),
+                    "extra": f"C2 beacon to {ev.get('dst_ip')}"
+                }
 
         elif source == "lateral_events":
-            return bool(beaconing.lateral_events)
+            if beaconing.lateral_events:
+                ev = beaconing.lateral_events[0]
+                return True, {
+                    "src_ip": ev.get("src_ip"),
+                    "extra": f"Contacted {ev.get('unique_targets', 6)} internal hosts"
+                }
 
         elif source == "incidents":
             status    = cond.get("status", "ACTIVE")
             threshold = cond.get("count", 3)
-            active    = sum(1 for inc in sniffer.incidents.values()
-                           if inc.get("status") == status)
-            return active >= threshold
+            active_list = [inc for inc in sniffer.incidents.values() if inc.get("status") == status]
+            if len(active_list) >= threshold:
+                top_ip = active_list[0].get("src_ip") or active_list[0].get("ip")
+                return True, {
+                    "src_ip": top_ip,
+                    "count": len(active_list),
+                    "extra": f"{len(active_list)} active attack incidents"
+                }
 
     except Exception:
         pass
-    return False
+    return False, {}
 
 
-def _auto_create_case(rule, app) -> None:
+def _auto_create_case(rule, match_info: dict, app) -> None:
     """Create a Case record when a correlation rule fires."""
     with app.app_context():
         try:
@@ -207,22 +233,52 @@ def _auto_create_case(rule, app) -> None:
             import uuid
             mitre = map_mitre(rule.mitre_tech or rule.name)
             case_id = f"CASE-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+            src_ip = (match_info or {}).get("src_ip")
+            extra = (match_info or {}).get("extra", "")
+
+            desc = rule.description or ""
+            if src_ip:
+                desc = f"{desc} | Attacker Source IP: {src_ip}"
+            if extra:
+                desc = f"{desc} | {extra}"
+
+            title = f"[AUTO] {rule.name}"
+            if src_ip:
+                title += f" ({src_ip})"
+
             case = Case(
-                case_id       = case_id,
-                title         = f"[AUTO] {rule.name}",
-                description   = rule.description,
-                severity      = rule.severity,
-                status        = 'OPEN',
-                source        = 'correlation',
-                attack_type   = rule.name,
-                mitre_tactic  = rule.mitre_tactic or mitre["mitre_tactic"],
-                mitre_technique=rule.mitre_tech or mitre["mitre_technique"],
-                sla_deadline  = datetime.utcnow() + timedelta(hours=4),
+                case_id        = case_id,
+                title          = title,
+                description    = desc,
+                severity       = rule.severity,
+                status         = 'OPEN',
+                source         = 'correlation',
+                src_ip         = src_ip,
+                attack_type    = rule.name,
+                mitre_tactic   = rule.mitre_tactic or mitre["mitre_tactic"],
+                mitre_technique= rule.mitre_tech or mitre["mitre_technique"],
+                sla_deadline   = datetime.utcnow() + timedelta(hours=4),
             )
             db.session.add(case)
             rule.fire_count += 1
             rule.last_fired  = datetime.utcnow()
             db.session.commit()
+
+            # Trigger Autonomous Agentic AI investigation & triage
+            try:
+                from core import ai_agent
+                rule_cond = json.loads(rule.conditions) if rule.conditions else {}
+                if src_ip:
+                    rule_cond["src_ip"] = src_ip
+                ai_agent.investigate_alert(
+                    case_id=case_id,
+                    rule_name=rule.name,
+                    conditions=rule_cond,
+                    event_summary=desc,
+                    app=app
+                )
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -235,6 +291,12 @@ def _eval_loop(app) -> None:
 
     while True:
         time.sleep(10)
+        try:
+            from detection import network_profiler
+            if not network_profiler.is_ready():
+                continue
+        except Exception:
+            pass
         now = time.time()
         try:
             with app.app_context():
@@ -243,15 +305,21 @@ def _eval_loop(app) -> None:
                 for rule in rules:
                     if now - _rule_last_fired.get(rule.id, 0) < _RULE_COOLDOWN:
                         continue
-                    if _eval_rule(rule, app):
+                    fired, match_info = _eval_rule(rule, app)
+                    if fired:
                         _rule_last_fired[rule.id] = now
-                        _auto_create_case(rule, app)
+                        _auto_create_case(rule, match_info, app)
                         try:
                             from reporting import notifications
+                            src_ip = (match_info or {}).get("src_ip")
+                            alert_body = rule.description or rule.name
+                            if src_ip:
+                                alert_body += f" (Source IP: {src_ip})"
                             notifications.send_alert(
                                 f"Correlation Rule Fired: {rule.name}",
-                                rule.description or rule.name,
+                                alert_body,
                                 severity=rule.severity,
+                                src_ip=src_ip,
                             )
                         except Exception:
                             pass

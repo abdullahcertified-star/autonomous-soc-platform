@@ -1,4 +1,4 @@
-﻿"""
+"""
 sniffer.py — SOC Packet Capture (v5: Windows Non-Admin Compatible)
 
 ════════════════════════════════════════════════════════════════════════
@@ -187,7 +187,7 @@ def _detect_gateway_ips() -> None:
                     found.add(m.group(1))
         if found:
             _gateway_ips = found
-            print(f"[SOC] Gateway IPs: {found} — excluded from attack detection")
+            print(f"[SOC] Gateway IPs: {found} - excluded from attack detection")
     except Exception:
         pass
 
@@ -237,6 +237,14 @@ _last_alert_t: dict = {}
 
 # Incident counter (monotonically increasing).
 _incident_counter: int = 0
+_alert_counter: int = 0
+_active_conns_ts: dict = {}
+_suspicious_ips_ts: dict = {}
+
+def _next_alert_seq() -> int:
+    global _alert_counter
+    _alert_counter += 1
+    return _alert_counter
 
 # Distributed flood incident key + state.
 _DIST_INC_KEY = "INC-DIST"
@@ -1054,6 +1062,13 @@ def _apply_elapsed(inc: dict, now: float) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _manage_incident(src: str, proto: str, severity, confidence: int, rate: int) -> None:
+    try:
+        from detection import network_profiler
+        if not network_profiler.is_ready():
+            return
+    except Exception:
+        pass
+
     now    = time.time()
     now_ts = ts()
 
@@ -1162,6 +1177,13 @@ def _update_target(dst: str, src: str, confidence: int, rate: int,
 def _manage_target_incident(dst: str, src: str, severity: str,
                              confidence: int, rate: int, attack_type: str) -> None:
     """Create or update an incident record for a device under attack."""
+    try:
+        from detection import network_profiler
+        if not network_profiler.is_ready():
+            return
+    except Exception:
+        pass
+
     now    = time.time()
     now_ts = ts()
     if severity not in ("HIGH", "MEDIUM"):
@@ -1247,6 +1269,13 @@ def process_arp(packet) -> None:
         prev_ips = frozenset(_arp_mac_to_ips[src_mac])
         _arp_mac_to_ips[src_mac].add(src_ip)
 
+        try:
+            from detection import network_profiler
+            if not network_profiler.is_ready():
+                return
+        except Exception:
+            pass
+
         # ARP Poisoning: a known IP is now being claimed by a different MAC.
         mac_conflict = bool(prev_macs) and src_mac not in prev_macs
         # MAC Spreading: this MAC is claiming an IP it has never claimed before.
@@ -1303,7 +1332,9 @@ def process_arp(packet) -> None:
                 "msg":        f"MITM — {msg}",
             })
             alerts.append({
+                "seq":        _next_alert_seq(),
                 "time":       now_ts,
+                "epoch":      now_f,
                 "ip":         src_ip,
                 "dst":        "",
                 "severity":   severity,
@@ -1354,7 +1385,9 @@ def _handle_distributed_flood(now_f: float, now_ts: str,
         msg = (f"SYSTEM UNDER ATTACK — Distributed flood from "
                f"{dist_srcs} unique IPs | {dist_pkts} pkts/10s")
         alerts.append({
+            "seq":        _next_alert_seq(),
             "time":       now_ts,
+            "epoch":      now_f,
             "ip":         "DISTRIBUTED",
             "dst":        dst,
             "severity":   "HIGH",
@@ -1461,7 +1494,7 @@ def process_packet(packet) -> None:
     # adapter IP (e.g. VirtualBox 192.168.106.3) as the attack source.  Excluding
     # host IPs at the detection level would make the entire attack invisible.
     # Outbound RST/ACK replies are handled by the `_is_outbound` guard below.
-    if src in _gateway_ips or dst in _gateway_ips:
+    if src in _gateway_ips:
         severity, confidence, rate = None, 0, 0
         is_dist, dist_srcs, dist_pkts = False, 0, 0
     else:
@@ -1497,6 +1530,13 @@ def process_packet(packet) -> None:
     except Exception:
         _enh = {}
 
+    # ── C2 Beaconing & Lateral Movement observation ───────────────────────
+    try:
+        from detection import beaconing
+        beaconing.observe(src, dst, now=time.time())
+    except Exception:
+        pass
+
     now_ts = ts()
     now_f  = time.time()
     hour   = datetime.now().hour
@@ -1508,6 +1548,7 @@ def process_packet(packet) -> None:
         protocol_stats[_tp]                 += 1
         network_stats["top_protocols"][_tp] += 1
         network_stats["total_packets"]      += 1
+        _active_conns_ts[(src, dst)]        = now_f
         network_stats["active_connections"].add((src, dst))
         network_stats["pps"]                   = pps
         capture_status["real_packets"]        += 1
@@ -1532,6 +1573,7 @@ def process_packet(packet) -> None:
         # packets where src is this host (prevents local machine IP appearing as attacker).
         if severity in ("HIGH", "MEDIUM") and not _is_outbound:
             network_stats["suspicious_ips"].add(src)
+            _suspicious_ips_ts[src] = now_f
         _pkt_sev     = "NORMAL" if _is_outbound else (severity or "NORMAL")
 
         packets.append({
@@ -1577,7 +1619,13 @@ def process_packet(packet) -> None:
         # port-scan hits (they all "scan" port 5000 repeatedly).  Since these
         # are flood packets — not real scans — suppressing scan tracking for
         # them prevents bogus "Scan Alerts: 100" on the status bar.
-        if dst_port > 0 and not src.startswith('127.') and not is_dist:
+        try:
+            from detection import network_profiler
+            _profiler_is_ready = network_profiler.is_ready()
+        except Exception:
+            _profiler_is_ready = True
+
+        if dst_port > 0 and not src.startswith('127.') and not is_dist and _profiler_is_ready:
             if src not in _scan_state:
                 _scan_state[src] = {
                     "ports": set(), "targets": set(),
@@ -1651,6 +1699,7 @@ def process_packet(packet) -> None:
                 "type": "ALERT", "msg": msg,
             })
             alerts.append({
+                "seq": _next_alert_seq(),
                 "time": now_ts, "epoch": now_f,
                 "ip": src, "dst": dst,
                 "severity": severity, "confidence": confidence,
@@ -1675,6 +1724,7 @@ def process_packet(packet) -> None:
                 "type": "TARGET_ALERT", "msg": tgt_msg,
             })
             alerts.append({
+                "seq": _next_alert_seq(),
                 "time": now_ts, "epoch": now_f,
                 "ip": src, "dst": dst,
                 "severity": tgt_sev, "confidence": tgt_conf,
@@ -1757,6 +1807,7 @@ def _traffic_sampler() -> None:
     Sample total network rate every second and store in traffic_history.
     Replaces the old per-packet traffic_history.append(rate) which was
     recording per-IP detection rates instead of the real network rate.
+    Also prunes inactive active_connections older than 60s.
     """
     prev_total = 0
     while True:
@@ -1765,6 +1816,13 @@ def _traffic_sampler() -> None:
         delta = max(0, curr_total - prev_total)
         prev_total = curr_total
         traffic_history.append(delta)
+
+        now = time.time()
+        with _lock:
+            stale_conns = [k for k, t in _active_conns_ts.items() if now - t > 60.0]
+            for k in stale_conns:
+                del _active_conns_ts[k]
+            network_stats["active_connections"] = set(_active_conns_ts.keys())
 
 
 def _incident_resolver() -> None:
@@ -1784,14 +1842,7 @@ def _incident_resolver() -> None:
                     inc["status"]   = "RESOLVED"
                     inc["end_time"] = now_ts
                     resolved_ips.append(inc.get("source_ip", ""))
-        # Clear detection engine state for resolved attackers so residual
-        # rate/start data cannot immediately re-trigger HIGH on next packet.
-        for _rip in resolved_ips:
-            if _rip:
-                try:
-                    detection.clear_src_state(_rip)
-                except Exception:
-                    pass
+
             # Also resolve target incidents (devices no longer being attacked)
             for inc in target_incidents.values():
                 if inc["status"] not in ("OPEN", "ACTIVE"):
@@ -1801,6 +1852,37 @@ def _incident_resolver() -> None:
                     _apply_elapsed(inc, now)
                     inc["status"]   = "RESOLVED"
                     inc["end_time"] = now_ts
+
+            # Prune suspicious_ips not seen for 300s and not currently active in incidents or firewall block
+            active_threat_ips = {
+                inc.get("source_ip") for inc in incidents.values()
+                if inc.get("status") in ("OPEN", "ACTIVE")
+            } | {
+                inc.get("source_ip") for inc in target_incidents.values()
+                if inc.get("status") in ("OPEN", "ACTIVE")
+            }
+            try:
+                from detection.firewall import blocked_ips
+                active_threat_ips |= set(blocked_ips)
+            except Exception:
+                pass
+
+            stale_suspicious = [
+                ip for ip, t in _suspicious_ips_ts.items()
+                if (now - t > 300.0) and (ip not in active_threat_ips)
+            ]
+            for ip in stale_suspicious:
+                del _suspicious_ips_ts[ip]
+            network_stats["suspicious_ips"] = set(_suspicious_ips_ts.keys()) | active_threat_ips
+
+        # Clear detection engine state for resolved attackers so residual
+        # rate/start data cannot immediately re-trigger HIGH on next packet.
+        for _rip in resolved_ips:
+            if _rip:
+                try:
+                    detection.clear_src_state(_rip)
+                except Exception:
+                    pass
 
 
 def _scan_cleanup() -> None:
@@ -2351,6 +2433,10 @@ def _pick_interfaces() -> list:
     GUID-based dedup prevents the same NIC from being opened twice under
     different names (avoids duplicate load; keeps capture correct).
     """
+    custom_iface = os.environ.get("CAPTURE_INTERFACE")
+    if custom_iface:
+        return [custom_iface]
+
     try:
         all_ifaces = get_working_ifaces()
     except Exception:
@@ -2447,6 +2533,7 @@ def _sniff_iface(iface, *, promisc: bool = True) -> None:
     Npcap without promisc mode silently discards non-local-destination frames.
     """
     _tl.iface = iface   # record interface name for layers.process() visibility tracking
+    _warned_no_pcap = False
     while True:
         try:
             sniff(
@@ -2457,11 +2544,21 @@ def _sniff_iface(iface, *, promisc: bool = True) -> None:
                 promisc=promisc,
             )
         except Exception as e:
-            print(f"[SOC] Sniffer error on {iface}: {e}")
+            err_str = str(e)
+            if "winpcap is not installed" in err_str.lower() or "libpcap" in err_str.lower():
+                if not _warned_no_pcap:
+                    print(f"[SOC] Live packet capture paused: Npcap driver not installed (install from https://npcap.com to enable)")
+                    _warned_no_pcap = True
+                time.sleep(30)
+            else:
+                print(f"[SOC] Sniffer error on {iface}: {e}")
+                time.sleep(2)
+
             if capture_status.get("interface") == iface:
                 capture_status["last_error"] = str(e)
                 capture_status["mode"]       = "error"
-        # sniff() returned (unexpected) or failed — wait briefly then retry.
+            continue
+        # sniff() returned (unexpected)
         time.sleep(2)
 
 
@@ -2527,7 +2624,7 @@ def _raw_socket_sniffer(host_ip: str) -> None:
 
 def reset_state() -> None:
     """Clear all in-memory SOC state without stopping the capture engine."""
-    global _incident_counter, _target_incident_counter, _raw_pkt_seq, _soc_pkt_seq
+    global _incident_counter, _target_incident_counter, _raw_pkt_seq, _soc_pkt_seq, _alert_counter
 
     with _lock:
         packets.clear()
@@ -2558,6 +2655,10 @@ def reset_state() -> None:
         _target_incident_counter    = 0
         _raw_pkt_seq                = 0
         _soc_pkt_seq                = 0
+        _alert_counter              = 0
+
+        _active_conns_ts.clear()
+        _suspicious_ips_ts.clear()
 
         _arp_ip_to_macs.clear()
         _arp_mac_to_ips.clear()
@@ -2643,7 +2744,7 @@ def start_sniffer() -> None:
     """
     admin = _is_admin()
 
-    print(f"[SOC] Sniffer v5 starting — admin={admin}, use_pcap=True")
+    print(f"[SOC] Sniffer v5 starting - admin={admin}, use_pcap=True")
 
     # FIX 1: Ensure Npcap backend is active (set at module level too, but
     # repeating here is safe and makes the intent clear for future readers).
@@ -2665,7 +2766,7 @@ def start_sniffer() -> None:
     _refresh_host_ips(force=True)
     print(f"[SOC] Host IPs: {sorted(_get_host_ips())}")
     _seed_arp_from_ifaces()
-    print(f"[SOC] ARP baseline seeded: {len(_arp_ip_to_macs)} IP→MAC entries")
+    print(f"[SOC] ARP baseline seeded: {len(_arp_ip_to_macs)} IP->MAC entries")
 
     # Detect gateway IPs so they can be excluded from attack detection.
     _detect_gateway_ips()
@@ -2707,7 +2808,7 @@ def start_sniffer() -> None:
                 ).start()
             print(f"[SOC] Raw-socket (SIO_RCVALL) attempted on: {host_ips_for_raw}")
         else:
-            print("[SOC] Raw-socket skipped — no usable host IPs found")
+            print("[SOC] Raw-socket skipped - no usable host IPs found")
 
     ifaces = _pick_interfaces()
     primary = ifaces[0] if ifaces else None
@@ -2732,7 +2833,7 @@ def start_sniffer() -> None:
 
     # If no interfaces were found, fall back to Scapy's auto-detected default.
     if not ifaces:
-        print("[SOC] No interfaces found — falling back to Scapy default interface")
+        print("[SOC] No interfaces found - falling back to Scapy default interface")
         threading.Thread(
             target=_sniff_iface, args=(None,),
             kwargs={"promisc": True},

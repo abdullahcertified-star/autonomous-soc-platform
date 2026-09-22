@@ -22,7 +22,7 @@
              background:#0f0f0f;z-index:1; }
 .dp-body { padding:18px; }
 .dp-field { margin-bottom:14px; }
-.dp-label { font-size:10px;font-weight:700;color:#3a3836;text-transform:uppercase;
+.dp-label { font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;
             letter-spacing:.06em;margin-bottom:5px; }
 .dp-value { font-size:13px;color:#f0ede8;word-break:break-all;line-height:1.5; }
 
@@ -323,7 +323,7 @@ function showDetail(log) {
     ['Message',
      `<div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:10px 12px;
                   font-size:12px;color:#8a8880;line-height:1.7;white-space:pre-wrap;">${escHtml(log.msg||'--')}</div>`],
-    ['Log ID',     `<span class="mono" style="font-size:11px;color:#3a3836;">${escHtml(log._id||'--')}</span>`],
+    ['Log ID',     `<span class="mono" style="font-size:11px;color:var(--text-muted);">${escHtml(log._id||'--')}</span>`],
   ];
 
   const shown = new Set(['_id','timestamp','time','type','ip','severity','msg','_deleted_at']);
@@ -399,7 +399,7 @@ async function refresh() {
 
     body.innerHTML = _logs.map((l, i) => `
       <tr id="row-${i}" class="log-row${_selIdxs.has(i)?' row-selected':''}" onclick="selectRow(${i})">
-        <td class="mono" style="font-size:10px;color:#3a3836;">${fmtTs(l.timestamp)}</td>
+        <td class="mono" style="font-size:10px;color:var(--text-muted);">${escHtml(fmtTs(l.timestamp))}</td>
         <td class="mono" style="font-size:12px;">${escHtml(l.time||'--')}</td>
         <td>${typePill(l.type)}</td>
         <td class="mono" style="font-size:12px;">${escHtml(l.ip||'--')}</td>
@@ -543,8 +543,15 @@ async function downloadLogs(scope) {
   const orig = btn.innerHTML;
   btn.textContent='Generating…'; btn.disabled=true;
   try {
-    await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    if (!window.jspdf) {
+      try {
+        await _loadScript('/static/jspdf.umd.min.js');
+        await _loadScript('/static/jspdf.plugin.autotable.min.js');
+      } catch(_) {
+        await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+      }
+    }
   } catch(e) {
     btn.innerHTML=orig; btn.disabled=(scope==='selected' && _selIdxs.size===0);
     alert('Failed to load PDF library — check internet connection.'); return;

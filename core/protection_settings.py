@@ -32,8 +32,18 @@ def _load() -> None:
 
 
 def _save() -> None:
-    with open(_SETTINGS_FILE, "w") as f:
-        json.dump(_settings, f, indent=2)
+    tmp = _SETTINGS_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_settings, f, indent=2)
+        os.replace(tmp, _SETTINGS_FILE)
+    except Exception:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+        raise
 
 
 def get_settings() -> dict:
@@ -49,7 +59,19 @@ def update_settings(updates: dict) -> dict:
             _load()
         for k, v in updates.items():
             if k in _DEFAULTS:
-                _settings[k] = type(_DEFAULTS[k])(v)
+                default_val = _DEFAULTS[k]
+                if isinstance(default_val, bool):
+                    if isinstance(v, str):
+                        _settings[k] = v.strip().lower() in ("true", "1", "yes", "on")
+                    else:
+                        _settings[k] = bool(v)
+                elif isinstance(default_val, int):
+                    try:
+                        _settings[k] = int(v)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    _settings[k] = type(default_val)(v)
         _save()
         return dict(_settings)
 

@@ -198,7 +198,7 @@
 <div class="card" style="margin-bottom:14px;">
   <div class="card-header">
     <span class="card-title">SOC Log Feed</span>
-    <span style="font-size:10px;color:#3a3836;">last 50 entries</span>
+    <span style="font-size:10px;color:var(--text-muted);">last 50 entries</span>
   </div>
   <div id="log-list" style="max-height:300px;overflow-y:auto;font-family:var(--font-mono);font-size:11px;display:flex;flex-direction:column;gap:3px;">
     <div class="empty-state">Loading…</div>
@@ -210,14 +210,14 @@
 {% block scripts %}
 <script>
 let _period = 24;
-const ESC = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const ESC = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 
 const LEVEL_COLORS = {
   CRITICAL:'#dc2626', HIGH:'#ef4444', MEDIUM:'#f97316', LOW:'#22c55e'
 };
 const LOG_COLORS = {
   CRITICAL:'#dc2626', ERROR:'#ef4444', WARNING:'#eab308',
-  INFO:'#c8c4be', DEBUG:'#3a3836'
+  INFO:'#c8c4be', DEBUG:'#8a8880'
 };
 
 function setPeriod(h, btn) {
@@ -254,11 +254,11 @@ async function loadReport() {
           const sev = (h.severity || 'MEDIUM').toUpperCase();
           const ts  = (h.timestamp || h.time || '').replace('T',' ').substring(0,19);
           return `<tr>
-            <td class="mono" style="font-size:10px;color:#3a3836;">${ESC(ts)}</td>
+            <td class="mono" style="font-size:10px;color:var(--text-muted);">${ESC(ts)}</td>
             <td class="mono" style="color:#f0ede8;">${ESC(h.ip||'--')}</td>
             <td><span class="pill" style="background:${sevColor(sev)}22;color:${sevColor(sev)};border:1px solid ${sevColor(sev)}44;font-size:9px;">${ESC(sev)}</span></td>
             <td style="font-size:11px;color:#c8c4be;">${ESC(h.username||'—')}</td>
-            <td style="font-size:10px;color:#8a8880;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ESC(h.msg||'')}</td>
+            <td style="font-size:10px;color:#8a8880;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ESC(h.msg||'')}">${ESC(h.msg||'')}</td>
           </tr>`;
         }).join('')
       : '<tr><td colspan="5" class="empty-state">No honeypot probes in this period.</td></tr>';
@@ -269,7 +269,7 @@ async function loadReport() {
     const levelColor = l => LEVEL_COLORS[l] || '#8a8880';
     document.getElementById('atk-tbody').innerHTML = atks.length
       ? atks.map((a, i) => `<tr>
-          <td style="color:#3a3836;">${i+1}</td>
+          <td style="color:var(--text-muted);">${i+1}</td>
           <td class="mono">${ESC(a.ip||'--')}</td>
           <td style="font-size:10px;color:#8a8880;">${ESC(a.country||'--')}</td>
           <td style="font-family:var(--font-mono);">${a.packet_count||0}</td>
@@ -312,7 +312,7 @@ async function loadWebIds() {
             border-left:3px solid ${sevColor(e.severity)};">
           <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
             <span class="mono" style="font-size:11px;color:${sevColor(e.severity)};">${ESC(e.attack_type)}</span>
-            <span style="font-size:10px;color:#3a3836;">${ESC(e.time)}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${ESC(e.time)}</span>
           </div>
           <div style="font-size:10px;color:#8a8880;">${ESC(e.ip)} → ${ESC(e.path||'')}</div>
         </div>`).join('')
@@ -353,7 +353,7 @@ async function loadLogs() {
       const t   = (l.time || '').substring(11, 19);
       return `<div style="padding:3px 6px;border-radius:4px;display:flex;gap:8px;align-items:baseline;">
         <span style="color:${col};font-size:10px;flex-shrink:0;min-width:58px;font-weight:600;">${ESC(l.level)}</span>
-        <span style="color:#3a3836;font-size:10px;flex-shrink:0;">${t}</span>
+        <span style="color:var(--text-muted);font-size:10px;flex-shrink:0;">${t}</span>
         <span style="color:#8a8880;font-size:10px;flex-shrink:0;min-width:80px;">[${ESC(l.source||'')}]</span>
         <span style="color:#f0ede8;font-size:10px;">${ESC(l.message||'')}</span>
       </div>`;

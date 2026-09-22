@@ -115,6 +115,10 @@ async function manualBlock() {
   document.getElementById('manual-reason').value='';
 }
 
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
+}
+
 async function refresh() {
   try {
     const res=await fetch('/api/top-attackers',{cache:'no-store'});
@@ -134,19 +138,20 @@ async function refresh() {
     body.innerHTML=list.map((a,i)=>{
       const risk=riskLevel(a.severity_score||0);
       const blocked=a.blocked||false;
+      const safeIp=escHtml(a.ip);
       const actionBtn=blocked
-        ?`<button class="btn btn-unblock" onclick="unblockIP('${a.ip}')">Unblock</button>`
-        :`<button class="btn btn-block" onclick="blockIP('${a.ip}')">Block</button>`;
+        ?`<button class="btn btn-unblock" data-ip="${safeIp}" onclick="unblockIP(this.getAttribute('data-ip'))">Unblock</button>`
+        :`<button class="btn btn-block" data-ip="${safeIp}" onclick="blockIP(this.getAttribute('data-ip'))">Block</button>`;
       return `<tr class="${blocked?'blocked-row':''}">
-        <td style="color:#3a3836;font-family:var(--font-mono)">${i+1}</td>
-        <td class="mono">${a.ip}</td>
-        <td class="mono" style="color:#8a8880">${a.country||'Unknown'}</td>
-        <td>${a.attack_type||'Normal'}</td>
-        <td class="mono">${a.packet_count||0}</td>
-        <td>${scoreBar(a.severity_score||0)}</td>
+        <td style="color:var(--text-muted);font-family:var(--font-mono)">${i+1}</td>
+        <td class="mono">${safeIp}</td>
+        <td class="mono" style="color:#8a8880">${escHtml(a.country||'Unknown')}</td>
+        <td>${escHtml(a.attack_type||'Normal')}</td>
+        <td class="mono">${Number(a.packet_count)||0}</td>
+        <td>${scoreBar(Math.min(100, Math.max(0, Number(a.severity_score)||0)))}</td>
         <td><span class="pill ${risk.cls}">${risk.label}</span></td>
-        <td class="mono" style="color:#8a8880">${a.last_seen||'--'}</td>
-        <td>${blocked?'<span class="pill pill-blocked">BLOCKED</span>':'<span style="color:#3a3836;font-size:11px;">ALLOWED</span>'}</td>
+        <td class="mono" style="color:#8a8880">${escHtml(a.last_seen||'--')}</td>
+        <td>${blocked?'<span class="pill pill-blocked">BLOCKED</span>':'<span style="color:var(--text-muted);font-size:11px;">ALLOWED</span>'}</td>
         <td>${actionBtn}</td>
       </tr>`;
     }).join('');

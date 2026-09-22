@@ -1,4 +1,4 @@
-﻿"""
+"""
 main.py — Dashboard & Network Overview Blueprint
 """
 from flask import Blueprint, render_template, jsonify, redirect, url_for, request
@@ -13,6 +13,7 @@ from core import layers
 from detection import network_sensor
 from reporting import dashboard as dash_data
 from detection.incident_manager import get_last_attack_epoch
+from rbac import require_permission
 
 main_bp = Blueprint("main", __name__)
 
@@ -78,7 +79,7 @@ def api_network_profile():
 
 
 @main_bp.route("/api/incidents/clear-all", methods=["POST"])
-@login_required
+@require_permission("incidents", "write")
 def api_clear_all_incidents():
     """Force-resolve all open incidents and reset the attack latch.
     Used when the system gets stuck in ATTACK state after an attack ends."""
@@ -103,7 +104,7 @@ def api_clear_all_incidents():
 
 
 @main_bp.route("/api/capture/soc")
-@login_required
+@require_permission("capture", "read")
 def api_capture_soc():
     """
     GET /api/capture/soc?since=<epoch>&limit=<n>&filter=<text>&proto=<TCP|UDP|...>&sev=<NORMAL|MEDIUM|HIGH>
@@ -178,7 +179,7 @@ def api_capture_soc():
 
 
 @main_bp.route("/api/capture/stream")
-@login_required
+@require_permission("capture", "read")
 def api_capture_stream():
     """
     GET /api/capture/stream?since=<epoch>&limit=<n>&filter=<text>
@@ -382,7 +383,7 @@ def api_alerts():
 
 
 @main_bp.route("/block", methods=["POST"])
-@login_required
+@require_permission("firewall", "write")
 def api_block():
     """POST /block — manually block an IP."""
     data = request.get_json(silent=True) or {}
@@ -398,7 +399,7 @@ def api_block():
 
 
 @main_bp.route("/unblock", methods=["POST"])
-@login_required
+@require_permission("firewall", "write")
 def api_unblock():
     """POST /unblock — remove a block."""
     data = request.get_json(silent=True) or {}
@@ -453,10 +454,17 @@ def api_advanced():
     # so distributed flood IPs (below per-IP threshold) are counted here.
     country_counts: dict = {}
     country_attacker_counts: dict = {}
-    for a in sniffer.top_attackers.values():
+    for a in list(sniffer.top_attackers.values()):
         c = a.get("country") or ""
         if c and c not in ("Local", "Multicast", "Unknown"):
             country_counts[c] = country_counts.get(c, 0) + a.get("packet_count", 1)
+            country_attacker_counts[c] = country_attacker_counts.get(c, 0) + 1
+
+    # Also include geolocated packets from live packet_streamer events
+    for ev in list(sniffer.attack_map_events):
+        c = ev.get("src_country") or ""
+        if c and c not in ("Local", "Multicast", "Unknown"):
+            country_counts[c] = country_counts.get(c, 0) + 1
             country_attacker_counts[c] = country_attacker_counts.get(c, 0) + 1
 
     top_countries  = sorted(country_counts.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -466,7 +474,7 @@ def api_advanced():
     bl          = detection.get_baseline_stats()
     deviation   = bl.get("deviation", 0)
     active_incs = [
-        i for i in sniffer.incidents.values()
+        i for i in list(sniffer.incidents.values())
         if i.get("status") in ("OPEN", "ACTIVE")
     ]
 
@@ -646,6 +654,7 @@ def api_advanced():
              "attackers": country_attacker_counts.get(c, 0)}
             for c, n in top_countries
         ],
+        "attack_map_events": list(reversed(list(sniffer.attack_map_events)))[:60],
         "public_ip_attacks": pub_ip_attacks,
         "threat_prediction": threat_prediction,
         "system_status":     system_status,

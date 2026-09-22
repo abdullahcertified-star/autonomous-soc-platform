@@ -160,7 +160,7 @@ async function loadTrash() {
         <td style="font-size:11px;color:var(--text-muted);" title="${escHtml(fmtDate(l._deleted_at))}">
           ${timeAgo(l._deleted_at)}
         </td>
-        <td class="mono" style="font-size:10px;color:#3a3836;">${fmtDate(l.timestamp)}</td>
+        <td class="mono" style="font-size:10px;color:var(--text-muted);">${escHtml(fmtDate(l.timestamp))}</td>
         <td>${typePill(l.type)}</td>
         <td class="mono" style="font-size:12px;">${escHtml(l.ip||'--')}</td>
         <td>${sevPill(l.severity)}</td>

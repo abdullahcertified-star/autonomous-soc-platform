@@ -3,6 +3,7 @@ portscan_bp.py — Built-in Port Scanner
 TCP Connect scan using Python socket — no nmap, no admin required.
 """
 
+import ipaddress
 import socket
 import threading
 import time
@@ -12,6 +13,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
+from rbac import require_permission
 
 portscan_bp = Blueprint("portscan", __name__)
 
@@ -172,12 +174,14 @@ def _run_scan(scan_id: str, ip: str, ports: list, stop_ev: threading.Event) -> N
 
 @portscan_bp.route("/scanner")
 @login_required
+@require_permission('network', 'read')
 def scanner_page():
     return render_template("scanner.html", user=current_user)
 
 
 @portscan_bp.route("/api/scan/start", methods=["POST"])
 @login_required
+@require_permission('network', 'write')
 def api_scan_start():
     data   = request.get_json(silent=True) or {}
     target = (data.get("target") or "").strip()
@@ -191,6 +195,13 @@ def api_scan_start():
         ip = socket.gethostbyname(target)
     except Exception:
         return jsonify({"error": f"Cannot resolve hostname: {target}"}), 400
+
+    try:
+        addr = ipaddress.ip_address(ip)
+        if addr.is_loopback or addr.is_link_local or addr.is_unspecified or addr.is_multicast:
+            return jsonify({"error": f"Scanning target {target} ({ip}) is not permitted (protected/loopback address)"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid resolved IP address"}), 400
 
     if mode == "quick":
         ports = _QUICK_PORTS
@@ -234,6 +245,7 @@ def api_scan_start():
 
 @portscan_bp.route("/api/scan/<scan_id>/status")
 @login_required
+@require_permission('network', 'read')
 def api_scan_status(scan_id):
     with _scans_lock:
         sc = _scans.get(scan_id)
@@ -257,6 +269,7 @@ def api_scan_status(scan_id):
 
 @portscan_bp.route("/api/scan/<scan_id>/stop", methods=["POST"])
 @login_required
+@require_permission('network', 'write')
 def api_scan_stop(scan_id):
     with _scans_lock:
         sc = _scans.get(scan_id)
@@ -267,6 +280,7 @@ def api_scan_stop(scan_id):
 
 @portscan_bp.route("/api/scan/history")
 @login_required
+@require_permission('network', 'read')
 def api_scan_history():
     with _scans_lock:
         return jsonify({"history": list(_history)})

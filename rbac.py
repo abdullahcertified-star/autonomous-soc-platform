@@ -65,6 +65,7 @@ ROLE_PERMISSIONS: dict[str, list[tuple[str, str, str]]] = {
         ('logs',        'write',  'Restore logs from trash'),
         ('logs',        'delete', 'Delete / move logs to trash'),
         ('mitre',       'write',  'Enable / disable correlation rules'),
+        ('network',     'write',  'Execute network scans'),
     ],
     'admin': [
         # Inherits analyst + viewer permissions (added during seed)

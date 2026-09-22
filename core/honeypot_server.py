@@ -84,7 +84,10 @@ def admin_login():
 
 @app.route("/api/honeypot-log")
 def api_honeypot_log():
-    """Internal API — queried by SOC platform's /api/honeypot-log proxy."""
+    """Internal API — only accessible from localhost / SOC platform."""
+    client_ip = request.remote_addr or ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        return {"error": "Access denied: local access only"}, 403
     return {"log": list(_honeypot_log), "total": len(_honeypot_log)}
 
 

@@ -55,10 +55,10 @@ def get_weight(attack_type: str) -> float:
 
 
 def get_reputation_factor(ip: str) -> float:
-    """Map reputation score 0–100 → multiplier 0.5–1.5."""
+    """Map reputation score 0–100 → multiplier 1.0–1.5 (neutral default = 1.0)."""
     with _rep_lock:
         score = _rep.get(ip, 0)
-    return 0.5 + (score / 100.0)
+    return 1.0 + (max(0, min(100, score)) / 200.0)
 
 
 def update_reputation(ip: str, delta: int) -> int:
@@ -99,11 +99,23 @@ def calculate(
             "components": { ... }
         }
     """
-    w    = get_weight(attack_type)
-    freq = min(1.0, (packet_count / max(window_sec, 1)) / 10_000)
-    rep  = get_reputation_factor(ip) if ip else 0.5
+    w = get_weight(attack_type)
+    pps = packet_count / max(window_sec, 1)
 
-    raw   = w * freq * asset_value * rep * max(0.0, min(1.0, confidence))
+    atype_lower = (attack_type or "").lower()
+    is_volumetric = any(k in atype_lower for k in ("flood", "ddos"))
+
+    if is_volumetric:
+        # Scale 0 to 1200+ pps with a baseline 0.35 for confirmed flood alerts
+        freq = min(1.0, max(0.35, pps / 1200.0))
+    else:
+        # Signature/exploit/scan attacks are severe even at low packet volume
+        freq = min(1.0, 0.75 + min(0.25, (packet_count / 50.0) * 0.25))
+
+    rep = get_reputation_factor(ip) if ip else 1.0
+    conf = max(0.0, min(1.0, confidence))
+
+    raw = w * freq * asset_value * rep * conf
     score = min(100.0, round(raw * 100, 1))
 
     if   score >= 80: level = "CRITICAL"
@@ -119,7 +131,7 @@ def calculate(
             "frequency_factor":  round(freq, 4),
             "reputation_factor": round(rep, 2),
             "asset_value":       asset_value,
-            "confidence":        round(confidence, 2),
+            "confidence":        round(conf, 2),
         },
     }
 

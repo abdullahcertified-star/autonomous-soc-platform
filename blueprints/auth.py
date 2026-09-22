@@ -4,10 +4,11 @@ Handles: register, login, logout, password reset, rate limiting
 """
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import login_user, logout_user, login_required, current_user
-from extensions import db
+from extensions import db, limiter
 from models import User, Role, UserRole, LoginHistory
 from datetime import datetime, timedelta
 from collections import defaultdict
+from urllib.parse import urlparse
 import re
 import secrets
 import html
@@ -31,6 +32,20 @@ LOCKOUT_WINDOW = 300  # 5 minutes in seconds
 # Helpers
 # ─────────────────────────────────────────────
 
+def is_safe_redirect_url(target: str | None) -> bool:
+    """Ensure redirect target is a safe local relative path to prevent Open Redirect (CWE-601)."""
+    if not target or not isinstance(target, str):
+        return False
+    # Must start with single forward slash, not protocol-relative //, no backslashes
+    if not target.startswith('/') or target.startswith('//') or '\\' in target:
+        return False
+    try:
+        parsed = urlparse(target)
+        return parsed.netloc == '' and parsed.scheme == ''
+    except Exception:
+        return False
+
+
 def sanitize(value: str) -> str:
     """Strip leading/trailing whitespace and escape HTML."""
     return html.escape(value.strip()) if value else ''
@@ -44,6 +59,8 @@ def validate_password(password: str) -> list[str]:
     errors = []
     if len(password) < 8:
         errors.append('Password must be at least 8 characters.')
+    if len(password.encode('utf-8')) > 72:
+        errors.append('Password must not exceed 72 bytes.')
     if not re.search(r'[A-Z]', password):
         errors.append('Password must contain at least one uppercase letter.')
     if not re.search(r'[a-z]', password):
@@ -100,6 +117,7 @@ def _record_login(user: User | None, identifier: str, success: bool,
         db.session.commit()
         return entry.id
     except Exception:
+        db.session.rollback()
         return None
 
 
@@ -126,7 +144,7 @@ def _assign_role(user: User, role_name: str, assigned_by: User | None = None) ->
         db.session.add(ur)
         db.session.commit()
     except Exception:
-        pass
+        db.session.rollback()
 
 
 # ─────────────────────────────────────────────
@@ -134,6 +152,7 @@ def _assign_role(user: User, role_name: str, assigned_by: User | None = None) ->
 # ─────────────────────────────────────────────
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
+@limiter.limit("10/minute")
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('main.dashboard'))
@@ -225,9 +244,9 @@ def login():
             flash('Please enter your email/username and password.', 'error')
             return render_template('login.html')
 
-        # Find user by email or username
+        # Find user by email or username (case-insensitive)
         user = User.query.filter(
-            (User.email == identifier) | (User.username == identifier)
+            (db.func.lower(User.email) == identifier) | (db.func.lower(User.username) == identifier)
         ).first()
 
         # Approval gate — account exists but admin hasn't approved yet
@@ -242,6 +261,12 @@ def login():
             _record_login(user, identifier, False, 'account_locked')
             flash(f'Account locked. Try again in {remaining} seconds.', 'error')
             return render_template('login.html')
+
+        # If previous lockout window has expired, reset counter
+        if user and not user.is_locked() and user.locked_until:
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            db.session.commit()
 
         if user and user.check_password(password):
             # Successful login — reset counters
@@ -265,7 +290,9 @@ def login():
             login_user(user, remember=remember)
             session.permanent = True
 
-            next_page = request.args.get('next')
+            next_page = request.args.get('next') or request.form.get('next')
+            if not is_safe_redirect_url(next_page):
+                next_page = None
             flash(f'Welcome back, {user.username}! Role: {user.role.capitalize()}', 'success')
             return redirect(next_page or url_for('main.dashboard'))
         else:
@@ -302,7 +329,7 @@ def logout():
                 hist.logout_at = datetime.utcnow()
                 db.session.commit()
         except Exception:
-            pass
+            db.session.rollback()
 
     logout_user()
     session.clear()
@@ -315,6 +342,7 @@ def logout():
 # ─────────────────────────────────────────────
 
 @auth_bp.route('/forgot-password', methods=['GET', 'POST'])
+@limiter.limit("10/minute")
 def forgot_password():
     if request.method == 'POST':
         email = sanitize(request.form.get('email', '').lower())
@@ -329,9 +357,10 @@ def forgot_password():
             user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
             db.session.commit()
 
-            # In production, email the link. Here we flash it for demo purposes.
+            # In production, email the link. Log on the server for development/audit purposes.
             reset_url = url_for('auth.reset_password', token=token, _external=True)
-            flash(f'[DEMO] Reset link: {reset_url}', 'debug')
+            import logging
+            logging.getLogger(__name__).info("[AUTH] Password reset requested for %s: %s", email, reset_url)
 
         return redirect(url_for('auth.login'))
 

@@ -5,6 +5,12 @@ import os
 import threading
 import urllib.parse
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -26,6 +32,7 @@ from blueprints.mitre import mitre_bp
 from blueprints.api_keys import api_keys_bp
 from blueprints.report import report_bp
 from blueprints.portscan import portscan_bp
+from blueprints.ai_copilot import ai_copilot_bp
 from detection import sniffer
 from core import firewall as fw
 from detection import web_ids
@@ -33,7 +40,7 @@ from core import soc_logger as log
 from core import sim
 
 # ── Paths exempt from web-IDS and rate-limiting ────────────────────────────────
-_EXEMPT_PREFIXES = ("/static/", "/socket.io/")
+_EXEMPT_PREFIXES = ("/static/", "/socket.io/", "/api/ai/")
 
 
 def _seed_rbac() -> None:
@@ -172,14 +179,19 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get(
         "SECRET_KEY", "dev-secret-key-change-in-production-!@#"
     )
-    _odbc = urllib.parse.quote_plus(
-        "DRIVER={ODBC Driver 18 for SQL Server};"
-        "SERVER=ABDULLAH\\SQLEXPRESS;"
-        "DATABASE=SOC_Platform;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"mssql+pyodbc:///?odbc_connect={_odbc}"
+    custom_db_uri = os.environ.get("SQLALCHEMY_DATABASE_URI")
+    if custom_db_uri:
+        app.config["SQLALCHEMY_DATABASE_URI"] = custom_db_uri
+    else:
+        server_name = os.environ.get("SQL_SERVER_NAME", os.environ.get("COMPUTERNAME", "localhost") + r"\SQLEXPRESS")
+        _odbc = urllib.parse.quote_plus(
+            "DRIVER={ODBC Driver 18 for SQL Server};"
+            f"SERVER={server_name};"
+            "DATABASE=SOC_Platform;"
+            "Trusted_Connection=yes;"
+            "TrustServerCertificate=yes;"
+        )
+        app.config["SQLALCHEMY_DATABASE_URI"] = f"mssql+pyodbc:///?odbc_connect={_odbc}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Session hardening
@@ -221,6 +233,7 @@ def create_app():
     app.register_blueprint(api_keys_bp)
     app.register_blueprint(report_bp)
     app.register_blueprint(portscan_bp)
+    app.register_blueprint(ai_copilot_bp)
 
     with app.app_context():
         db.create_all()
@@ -271,8 +284,7 @@ def create_app():
             return
 
         body = ""
-        ct = request.content_type or ""
-        if "application/json" not in ct and request.content_length:
+        if request.content_length:
             try:
                 body = request.get_data(as_text=True)[:16_384]
             except Exception:
@@ -314,10 +326,33 @@ def create_app():
         h["X-XSS-Protection"]          = "1; mode=block"
         h["Referrer-Policy"]           = "strict-origin-when-cross-origin"
         h["Permissions-Policy"]        = "geolocation=(), microphone=(), camera=()"
+        h["Content-Security-Policy"]   = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.socket.io https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' ws: wss:; "
+            "frame-ancestors 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
         # Cache-Control for API endpoints
         if request.path.startswith("/api/"):
             h["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
         return response
+
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        if exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+        try:
+            db.session.remove()
+        except Exception:
+            pass
 
     # ── Background threads ─────────────────────────────────────────────────────
     threading.Thread(target=sniffer.start_sniffer, daemon=True).start()
@@ -334,6 +369,18 @@ def create_app():
     except Exception:
         pass
 
+    try:
+        from reporting.notifications import init_notifications
+        init_notifications(app)
+    except Exception as e:
+        log.error("app", f"Notifications init failed: {e}")
+
+    try:
+        from reporting.threat_intel import init_threat_intel
+        init_threat_intel(app)
+    except Exception as e:
+        log.error("app", f"Threat intel init failed: {e}")
+
     # Flask-SocketIO real-time event emitter (Phase 6)
     try:
         from core.websocket_events import start_event_emitter
@@ -341,6 +388,14 @@ def create_app():
         log.info("app", "SocketIO event emitter started")
     except Exception as e:
         log.error("app", f"SocketIO emitter failed to start: {e}")
+
+    # ── Attack Globe Real-Time Packet Streamer ────────────────────────────────
+    try:
+        import packet_streamer
+        packet_streamer.start_packet_streamer(app)
+        log.info("app", "Attack Globe Packet Streamer started")
+    except Exception as e:
+        log.error("app", f"Packet Streamer failed to start: {e}")
 
     log.info("app", "SOC platform started", {
         "env": os.environ.get("FLASK_ENV", "development"),

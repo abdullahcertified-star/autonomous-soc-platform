@@ -306,7 +306,8 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Three.js served locally — no CDN dependency -->
+<!-- Three.js and Socket.IO served for live Attack Globe packet streaming -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='three.min.js') }}"></script>
 <script src="{{ url_for('static', filename='OrbitControls.js') }}"></script>
 <script>
@@ -772,10 +773,14 @@ class AttackArc {
     this.alive    = true;
     this.age      = 0;
 
-    const srcI  = CC[srcCode] || CC.Unknown;
-    const dstI  = CC[dstCode] || CC.Local;
-    this.srcPos = ll2v3(srcI.lat, srcI.lon, 1.005);
-    this.dstPos = ll2v3(dstI.lat, dstI.lon, 1.005);
+    const srcLat = (meta.src_lat !== undefined && meta.src_lat !== null) ? meta.src_lat : (CC[srcCode] ? CC[srcCode].lat : CC.Unknown.lat);
+    const srcLon = (meta.src_lon !== undefined && meta.src_lon !== null) ? meta.src_lon : (CC[srcCode] ? CC[srcCode].lon : CC.Unknown.lon);
+
+    const dstLat = (meta.dst_lat !== undefined && meta.dst_lat !== null) ? meta.dst_lat : (CC[dstCode] ? CC[dstCode].lat : CC.Local.lat);
+    const dstLon = (meta.dst_lon !== undefined && meta.dst_lon !== null) ? meta.dst_lon : (CC[dstCode] ? CC[dstCode].lon : CC.Local.lon);
+
+    this.srcPos = ll2v3(srcLat, srcLon, 1.005);
+    this.dstPos = ll2v3(dstLat, dstLon, 1.005);
 
     const hexC  = SEV_HEX[severity] || SEV_HEX.MEDIUM;
     this.color  = new THREE.Color(hexC);
@@ -921,21 +926,32 @@ function updateHUD(data) {
   setBar('bar-repeat', 'pct-repeat', pred.repeat_probability      || 0);
 
   /* country stats */
+  renderLeaderboard(ctry);
+}
+
+function renderLeaderboard(remoteCtry = null) {
   const cEl = document.getElementById('g-countries');
-  if (cEl) {
-    const source = ctry.length ? ctry : Object.entries(countryAtkCount)
-      .sort((a,b)=>b[1]-a[1]).slice(0,8).map(([c,n])=>({ country:c, count:n, percent: Math.min(100, n*10) }));
-    cEl.innerHTML = source.slice(0,8).map((c,i) => {
-      const col = c.percent > 50 ? '#ff3355' : c.percent > 20 ? '#ff7700' : '#ffd700';
-      const code = Object.keys(CC).find(k => CC[k].name === c.country) || '';
-      return `<div class="g-country">
-        <span class="g-rank">${i+1}</span>
-        <span class="g-cname">${c.country||'?'}${code?' ('+code+')':''}</span>
-        <div class="g-cbar-track"><div class="g-cbar-fill" style="width:${c.percent||0}%;background:${col}"></div></div>
-        <span class="g-ccount">${c.count}</span>
-      </div>`;
-    }).join('');
+  if (!cEl) return;
+  let source = [];
+  if (remoteCtry && remoteCtry.length > 0) {
+    source = remoteCtry;
+  } else {
+    const entries = Object.entries(countryAtkCount).sort((a,b)=>b[1]-a[1]);
+    const maxN = entries.length > 0 ? entries[0][1] : 1;
+    source = entries.map(([c, n]) => ({ country: c, count: n, percent: Math.min(100, Math.round((n / maxN) * 100)) }));
   }
+  cEl.innerHTML = source.slice(0, 8).map((c, i) => {
+    const pct = c.percent !== undefined ? c.percent : 0;
+    const col = pct > 50 ? '#ff3355' : pct > 20 ? '#ff7700' : '#ffd700';
+    const cInfo = CC[c.country] || {};
+    const name = cInfo.name || c.country || '?';
+    return `<div class="g-country">
+      <span class="g-rank">${i+1}</span>
+      <span class="g-cname">${name}${c.country && c.country !== name ? ' (' + c.country + ')' : ''}</span>
+      <div class="g-cbar-track"><div class="g-cbar-fill" style="width:${pct}%;background:${col}"></div></div>
+      <span class="g-ccount">${c.count}</span>
+    </div>`;
+  }).join('');
 }
 
 function addFeedItem(ev, isDemo = false) {
@@ -1175,18 +1191,79 @@ let lastT = performance.now();
   renderer.render(scene, camera);
 })();
 
-// ═══════════════════════════════════════════════════════
-//  STARTUP
-// ═══════════════════════════════════════════════════════
-/* fire 4 demo attacks immediately so globe looks alive on load */
-for (let i = 0; i < 4; i++) setTimeout(demoAttack, i * 600);
+let _lastRealPacketTime = 0;
 
-/* then poll real data */
+function handleLiveGlobeArc(ev) {
+  if (!ev) return;
+  _lastRealPacketTime = Date.now();
+
+  const src = ev.src_country || 'Unknown';
+  const dst = ev.dst_country || 'Local';
+  const sev = (ev.severity || 'MEDIUM').toUpperCase();
+
+  arcs.push(new AttackArc(src, dst, sev, ev));
+  addFeedItem({
+    src_country: src,
+    dst_country: dst,
+    severity: sev,
+    attack_type: ev.attack_type || ev.proto || 'Traffic'
+  });
+
+  totalAttacks++;
+  if      (sev === 'CRITICAL') critCount++;
+  else if (sev === 'HIGH')     highCount++;
+  else                         medCount++;
+
+  countryAtkCount[src] = (countryAtkCount[src] || 0) + 1;
+  flashMarker(src, sev);
+
+  setText('gm-total',    totalAttacks);
+  setText('badge-total', totalAttacks);
+  setText('gm-critical', critCount);
+  setText('gm-high',     highCount);
+  setText('gm-medium',   medCount);
+  setText('badge-arcs',  arcs.length);
+  setText('gm-arcs',     arcs.length);
+
+  renderLeaderboard();
+}
+
+// ═══════════════════════════════════════════════════════
+//  STARTUP & LIVE STREAM INTEGRATION
+// ═══════════════════════════════════════════════════════
+/* Initial warm-up */
+for (let i = 0; i < 2; i++) setTimeout(demoAttack, i * 500);
+
+/* Initial fetch */
 fetchData();
 setInterval(fetchData, 3000);
 
-/* demo pulse every 2.5 s if arcs run low — keeps globe alive during quiet periods */
-setInterval(() => { if (arcs.length < 6) demoAttack(); }, 2500);
+/* Socket.IO real-time wire listener */
+if (typeof io !== 'undefined') {
+  try {
+    const globeSocket = io({ transports: ['websocket', 'polling'] });
+    globeSocket.on('connect', () => console.log('[Globe-WS] Connected to live packet streamer'));
+    globeSocket.on('globe_attack_arc', handleLiveGlobeArc);
+    globeSocket.on('status_update', (st) => {
+      if (!st) return;
+      if (st.active_attacks !== undefined) setText('gm-active', st.active_attacks);
+      if (st.blocked_ips !== undefined) setText('gm-blocked', st.blocked_ips);
+      if (st.pps !== undefined) {
+        setText('badge-pps', Math.round(st.pps));
+        setText('gm-pps', Math.round(st.pps));
+      }
+    });
+  } catch (err) {
+    console.warn('[Globe-WS] Socket init fallback:', err);
+  }
+}
+
+/* Demo pulse only if NO real packets seen in 15 seconds and arcs are empty */
+setInterval(() => {
+  if (Date.now() - _lastRealPacketTime > 15000 && arcs.length < 2) {
+    demoAttack();
+  }
+}, 3000);
 
 } /* end initGlobe() */
 </script>

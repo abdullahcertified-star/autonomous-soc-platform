@@ -49,7 +49,15 @@ class User(UserMixin, db.Model):
         self.password_hash = bcrypt.hashpw(pw_bytes, salt).decode('utf-8')
 
     def check_password(self, password: str) -> bool:
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+        if not password or not self.password_hash:
+            return False
+        pw_bytes = password.encode('utf-8')
+        if len(pw_bytes) > 72:
+            return False
+        try:
+            return bcrypt.checkpw(pw_bytes, self.password_hash.encode('utf-8'))
+        except Exception:
+            return False
 
     def is_locked(self) -> bool:
         if self.locked_until and datetime.utcnow() < self.locked_until:
@@ -112,7 +120,10 @@ class User(UserMixin, db.Model):
 
 @login_manager.user_loader
 def load_user(user_id: str):
-    return User.query.get(int(user_id))
+    user = User.query.get(int(user_id))
+    if user and not user.is_approved:
+        return None
+    return user
 
 
 # ── Case Management ───────────────────────────────────────────────────────────
@@ -226,7 +237,11 @@ class APIKey(db.Model):
         return bool(self.expires_at and datetime.utcnow() > self.expires_at)
 
     def has_scope(self, scope: str) -> bool:
-        return scope in (self.scopes or '').split(',')
+        target = (scope or '').strip().lower()
+        if not target:
+            return False
+        user_scopes = [s.strip().lower() for s in (self.scopes or '').split(',') if s.strip()]
+        return target in user_scopes or 'admin' in user_scopes
 
     def to_dict(self) -> dict:
         return {

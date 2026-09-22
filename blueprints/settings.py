@@ -1,4 +1,4 @@
-﻿"""
+"""
 settings_bp.py — Settings & Configuration Blueprint
 """
 from flask import Blueprint, render_template, jsonify, request, flash, redirect, url_for, abort
@@ -25,8 +25,28 @@ _INT_FIELDS = [
     "time_window", "baseline_window", "confidence_threshold",
     "sustained_seconds", "cooldown_seconds",
     "low_threshold", "medium_threshold", "high_threshold",
+    "abs_normal_rate", "abs_suspicious_rate", "rate_window",
 ]
 _BOOL_FIELDS = ["enabled", "sim_mode"]
+
+
+def _sync_config_aliases() -> None:
+    """Keep settings blueprint thresholds and detection.py thresholds synchronized."""
+    if "time_window" in detection.config:
+        detection.config["rate_window"] = detection.config["time_window"]
+    elif "rate_window" in detection.config:
+        detection.config["time_window"] = detection.config["rate_window"]
+
+    if "low_threshold" in detection.config:
+        detection.config["abs_normal_rate"] = detection.config["low_threshold"]
+    elif "abs_normal_rate" in detection.config:
+        detection.config["low_threshold"] = detection.config["abs_normal_rate"]
+
+    if "high_threshold" in detection.config:
+        detection.config["abs_suspicious_rate"] = detection.config["high_threshold"]
+    elif "abs_suspicious_rate" in detection.config:
+        detection.config["high_threshold"] = detection.config["abs_suspicious_rate"]
+        detection.config.setdefault("medium_threshold", int(detection.config["abs_suspicious_rate"] * 0.7))
 
 
 def _load_detection_config() -> None:
@@ -44,9 +64,11 @@ def _load_detection_config() -> None:
                 detection.config[field] = bool(saved[field])
     except (FileNotFoundError, json.JSONDecodeError):
         pass
+    _sync_config_aliases()
 
 
 def _save_detection_config() -> None:
+    _sync_config_aliases()
     to_save = {}
     for field in _INT_FIELDS:
         if field in detection.config:
@@ -74,6 +96,7 @@ def settings_page():
 @login_required
 @require_permission('settings', 'read')
 def api_settings_get():
+    _sync_config_aliases()
     return jsonify({"config": dict(detection.config)})
 
 
@@ -94,6 +117,7 @@ def api_settings_post():
         if f in data:
             detection.config[f] = bool(data[f])
 
+    _sync_config_aliases()
     _save_detection_config()
     return jsonify({"status": "ok", "config": dict(detection.config)})
 
@@ -184,7 +208,9 @@ def _run_demo(duration: int, local_ip: str) -> None:
 
             # Alert
             sniffer.alerts.append({
+                "seq":        sniffer._next_alert_seq(),
                 "time":       now_ts,
+                "epoch":      now_f,
                 "ip":         ip,
                 "dst":        local_ip,
                 "severity":   severity,
@@ -341,11 +367,22 @@ _ROLE_MAP   = {'super_user': 'admin', 'power_user': 'analyst', 'standard_user': 
 _LABEL_MAP  = {'admin': 'super_user', 'analyst': 'power_user', 'viewer': 'standard_user'}
 
 
+def _is_admin() -> bool:
+    """Check if current user has admin status via role attribute, method, or permissions."""
+    if not current_user or not current_user.is_authenticated:
+        return False
+    return (
+        getattr(current_user, 'role', None) == 'admin' or
+        (hasattr(current_user, 'has_role') and current_user.has_role('admin')) or
+        (hasattr(current_user, 'can') and (current_user.can('users', 'manage') or current_user.can('roles', 'manage')))
+    )
+
+
 @settings_bp.route("/admin/users/create", methods=["POST"])
 @login_required
 def admin_create_user():
     """Admin creates a user directly — auto-approved."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     from extensions import db
     from models import User
@@ -372,27 +409,31 @@ def admin_create_user():
     for e in errors:
         flash(e, 'error')
     if not errors:
-        user = User(username=username, email=email, role=internal,
-                    is_approved=True, requested_role=role_label)
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
-        _assign_role(user, internal, assigned_by=current_user)
-        flash(f'User "{username}" created as {role_label.replace("_", " ").title()}.', 'success')
+        try:
+            user = User(username=username, email=email, role=internal,
+                        is_approved=True, requested_role=role_label)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            _assign_role(user, internal, assigned_by=current_user)
+            flash(f'User "{username}" created as {role_label.replace("_", " ").title()}.', 'success')
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to create user "{username}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))
 
 
 @settings_bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 @login_required
 def admin_delete_user(user_id):
-    """Permanently delete an approved user account."""
-    if current_user.role != 'admin':
+    """Permanently delete an approved user account safely handling foreign key references."""
+    if not _is_admin():
         abort(403)
     if user_id == current_user.id:
         flash('You cannot delete your own account.', 'error')
         return redirect(url_for('settings.admin_pending_users'))
     from extensions import db
-    from models import User
+    from models import User, UserRole, LoginHistory, Case, AuditLog, APIKey
     user = db.session.get(User, user_id)
     if not user:
         flash('User not found.', 'error')
@@ -401,9 +442,21 @@ def admin_delete_user(user_id):
         flash('The seed_admin account is protected and cannot be deleted.', 'error')
         return redirect(url_for('settings.admin_pending_users'))
     name = user.username
-    db.session.delete(user)
-    db.session.commit()
-    flash(f'User "{name}" has been permanently deleted.', 'info')
+    try:
+        # Nullify or delete referencing records to prevent FK constraints issues across databases
+        LoginHistory.query.filter_by(user_id=user.id).update({'user_id': None})
+        UserRole.query.filter_by(user_id=user.id).delete()
+        UserRole.query.filter_by(assigned_by_id=user.id).update({'assigned_by_id': None})
+        Case.query.filter_by(created_by_id=user.id).update({'created_by_id': None})
+        Case.query.filter_by(assigned_to_id=user.id).update({'assigned_to_id': None})
+        AuditLog.query.filter_by(user_id=user.id).update({'user_id': None})
+        APIKey.query.filter_by(user_id=user.id).delete()
+        db.session.delete(user)
+        db.session.commit()
+        flash(f'User "{name}" has been permanently deleted.', 'info')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete user "{name}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))
 
 
@@ -411,7 +464,7 @@ def admin_delete_user(user_id):
 @login_required
 def admin_permissions():
     """Permissions matrix — shows all resource:action rows per role."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     from models import Role, Permission
     from collections import defaultdict
@@ -423,9 +476,13 @@ def admin_permissions():
     for p in perms:
         by_resource[p.resource].append(p)
     for res in by_resource:
-        by_resource[res].sort(key=lambda p: _order.get(p.action, 9))
-    _display = {'viewer': 'Standard User', 'analyst': 'Power User', 'admin': 'Super User'}
-    return render_template('admin_permissions.html',
+        by_resource[res].sort(key=lambda p: _order.get(p.action, 99))
+    _display = {
+        'admin':   ('Super User',    'rpill-super'),
+        'analyst': ('Power User',    'rpill-power'),
+        'viewer':  ('Standard User', 'rpill-standard'),
+    }
+    return render_template("admin_permissions.html",
                            roles=roles,
                            by_resource=dict(sorted(by_resource.items())),
                            role_perm_map=role_perm_map,
@@ -436,7 +493,7 @@ def admin_permissions():
 @login_required
 def admin_permissions_toggle():
     """AJAX endpoint — grant or revoke a permission from a role."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     from extensions import db
     from models import Role, Permission
@@ -448,20 +505,24 @@ def admin_permissions_toggle():
     perm = db.session.get(Permission, perm_id)
     if not role or not perm:
         return jsonify({'error': 'Not found'}), 404
-    if grant:
-        if perm not in role.permissions:
-            role.permissions.append(perm)
-    else:
-        if perm in role.permissions:
-            role.permissions.remove(perm)
-    db.session.commit()
-    return jsonify({'ok': True, 'role': role.name, 'perm': perm.name, 'granted': grant})
+    try:
+        if grant:
+            if perm not in role.permissions:
+                role.permissions.append(perm)
+        else:
+            if perm in role.permissions:
+                role.permissions.remove(perm)
+        db.session.commit()
+        return jsonify({'ok': True, 'role': role.name, 'perm': perm.name, 'granted': grant})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @settings_bp.route("/admin/users/pending-count")
 @login_required
 def admin_pending_count():
-    if current_user.role != 'admin':
+    if not _is_admin():
         return jsonify({'count': 0})
     from models import User
     return jsonify({'count': User.query.filter_by(is_approved=False).count()})
@@ -471,7 +532,7 @@ def admin_pending_count():
 @login_required
 def admin_pending_users():
     """User management: pending approvals + active user roster."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     from models import User
     pending = User.query.filter_by(is_approved=False).order_by(User.created_at.asc()).all()
@@ -484,7 +545,7 @@ def admin_pending_users():
 @login_required
 def admin_approve_user(user_id):
     """Approve a pending user and assign their requested role."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     from extensions import db
     from models import User, UserRole
@@ -498,23 +559,27 @@ def admin_approve_user(user_id):
     chosen_label  = request.form.get('role', user.requested_role or 'standard_user')
     internal_role = _ROLE_MAP.get(chosen_label, 'viewer')
 
-    user.role        = internal_role
-    user.is_approved = True
-    db.session.commit()
+    try:
+        user.role        = internal_role
+        user.is_approved = True
+        db.session.commit()
 
-    _assign_role(user, internal_role, assigned_by=current_user)
-    flash(f'"{user.username}" approved as {chosen_label.replace("_", " ").title()}.', 'success')
+        _assign_role(user, internal_role, assigned_by=current_user)
+        flash(f'"{user.username}" approved as {chosen_label.replace("_", " ").title()}.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to approve user "{user.username}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))
 
 
 @settings_bp.route("/admin/users/<int:user_id>/reject", methods=["POST"])
 @login_required
 def admin_reject_user(user_id):
-    """Permanently delete a rejected registration."""
-    if current_user.role != 'admin':
+    """Permanently delete a rejected registration safely handling any existing records."""
+    if not _is_admin():
         abort(403)
     from extensions import db
-    from models import User
+    from models import User, UserRole, LoginHistory, APIKey
 
     user = db.session.get(User, user_id)
     if not user or user.is_approved:
@@ -522,9 +587,16 @@ def admin_reject_user(user_id):
         return redirect(url_for('settings.admin_pending_users'))
 
     username = user.username
-    db.session.delete(user)
-    db.session.commit()
-    flash(f'Access request from "{username}" has been rejected and removed.', 'info')
+    try:
+        LoginHistory.query.filter_by(user_id=user.id).delete()
+        UserRole.query.filter_by(user_id=user.id).delete()
+        APIKey.query.filter_by(user_id=user.id).delete()
+        db.session.delete(user)
+        db.session.commit()
+        flash(f'Access request from "{username}" has been rejected and removed.', 'info')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to reject user "{username}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))
 
 
@@ -532,7 +604,7 @@ def admin_reject_user(user_id):
 @login_required
 def admin_change_role(user_id):
     """Change the access level of an already-approved user."""
-    if current_user.role != 'admin':
+    if not _is_admin():
         abort(403)
     if user_id == current_user.id:
         flash('You cannot change your own access level.', 'error')
@@ -554,33 +626,37 @@ def admin_change_role(user_id):
         flash(f'"{user.username}" already has that access level.', 'info')
         return redirect(url_for('settings.admin_pending_users'))
 
-    # Update role column
-    user.role = internal_role
+    try:
+        # Update role column
+        user.role = internal_role
 
-    # Deactivate all current active role assignments
-    UserRole.query.filter_by(user_id=user.id, is_active=True).update({'is_active': False})
-    db.session.flush()
+        # Deactivate all current active role assignments
+        UserRole.query.filter_by(user_id=user.id, is_active=True).update({'is_active': False})
+        db.session.flush()
 
-    # Add or re-activate the new role
-    role_obj = Role.query.filter_by(name=internal_role).first()
-    if role_obj:
-        existing = UserRole.query.filter_by(user_id=user.id, role_id=role_obj.id).first()
-        if existing:
-            existing.is_active      = True
-            existing.assigned_by_id = current_user.id
-            existing.assigned_at    = __import__('datetime').datetime.utcnow()
-        else:
-            db.session.add(UserRole(
-                user_id        = user.id,
-                role_id        = role_obj.id,
-                assigned_by_id = current_user.id,
-                is_active      = True,
-            ))
+        # Add or re-activate the new role
+        role_obj = Role.query.filter_by(name=internal_role).first()
+        if role_obj:
+            existing = UserRole.query.filter_by(user_id=user.id, role_id=role_obj.id).first()
+            if existing:
+                existing.is_active      = True
+                existing.assigned_by_id = current_user.id
+                existing.assigned_at    = __import__('datetime').datetime.utcnow()
+            else:
+                db.session.add(UserRole(
+                    user_id        = user.id,
+                    role_id        = role_obj.id,
+                    assigned_by_id = current_user.id,
+                    is_active      = True,
+                ))
 
-    db.session.commit()
-    flash(
-        f'"{user.username}" changed from {old_label.replace("_"," ").title()} '
-        f'to {chosen_label.replace("_"," ").title()}.',
-        'success'
-    )
+        db.session.commit()
+        flash(
+            f'"{user.username}" changed from {old_label.replace("_"," ").title()} '
+            f'to {chosen_label.replace("_"," ").title()}.',
+            'success'
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to change role for "{user.username}": {str(exc)}', 'error')
     return redirect(url_for('settings.admin_pending_users'))

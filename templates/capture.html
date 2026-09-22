@@ -422,7 +422,7 @@
 .lc-thead-row { background:#080808; }
 .lc-th {
   padding:9px 10px; text-align:left; font-size:10px; font-weight:600;
-  color:#3a3836; text-transform:uppercase; letter-spacing:.06em;
+  color:#8a8880; text-transform:uppercase; letter-spacing:.06em;
   white-space:nowrap; border-bottom:1px solid #1e1e1e;
   position:sticky; top:0; background:#080808; z-index:5;
 }
@@ -659,7 +659,7 @@ function rowHtml(p) {
   return `<tr class="lc-row ${sevRowClass(sev)}" data-epoch="${p.epoch||0}" data-sev="${sev}" data-serial="${serial}"
     title="Click to inspect this packet"
     onclick="openDrawer(${serial})">
-    <td style="color:#3a3836;font-family:var(--font-mono);font-size:10px;text-align:right;padding-right:6px;">${serial}</td>
+    <td style="color:#8a8880;font-family:var(--font-mono);font-size:10px;text-align:right;padding-right:6px;">${serial}</td>
     <td style="color:#8a8880;font-family:var(--font-mono);font-size:11px;">${esc(p.time||'--')}</td>
     <td style="${srcStyle}">${esc(src)}${outTag}</td>
     <td style="color:#8a8880;font-family:var(--font-mono);font-size:11px;">${esc(dst)}</td>
@@ -667,7 +667,7 @@ function rowHtml(p) {
     <td style="color:#8a8880;font-size:11px;">${esc(svc)}</td>
     <td style="font-size:10px;color:#8a8880;">${esc(p.country||'--')}</td>
     <td style="font-family:var(--font-mono);color:${conf>=70?'#f87171':conf>=40?'#f97316':'#8a8880'};font-size:11px;">
-      ${p.rate||0}<span style="font-size:9px;color:#3a3836;margin-left:1px;">pkt</span>
+      ${p.rate||0}<span style="font-size:9px;color:#8a8880;margin-left:1px;">pkt</span>
     </td>
     <td>
       <div style="display:flex;align-items:center;gap:4px;">
@@ -1240,8 +1240,15 @@ async function downloadSession() {
       document.head.appendChild(s);
     });
     try {
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+      if (!window.jspdf) {
+        try {
+          await loadScript('/static/jspdf.umd.min.js');
+          await loadScript('/static/jspdf.plugin.autotable.min.js');
+        } catch(_) {
+          await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+          await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+        }
+      }
     } catch (e) {
       if (dlBtn) { dlBtn.textContent = 'Download'; dlBtn.disabled = false; }
       showToast('Failed to load PDF library — check internet connection.', 'error');

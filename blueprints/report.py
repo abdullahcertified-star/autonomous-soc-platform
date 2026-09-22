@@ -1,4 +1,4 @@
-﻿"""
+"""
 report_bp.py — SOC Report Generator Blueprint
 
 Endpoints:
@@ -43,10 +43,22 @@ report_bp = Blueprint("report", __name__)
 # ── Data gathering ────────────────────────────────────────────────────────────
 
 def _gather(hours: int = 24) -> dict:
+    try:
+        hours = max(1, min(int(hours), 168))
+    except (ValueError, TypeError):
+        hours = 24
     cutoff = time.time() - hours * 3600
 
+    all_incs = list(sniffer.incidents.values())
+    seen_ids = {i.get("id") for i in all_incs if i.get("id")}
+    for tinc in sniffer.target_incidents.values():
+        if tinc.get("id") not in seen_ids:
+            all_incs.append(tinc)
+            if tinc.get("id"):
+                seen_ids.add(tinc.get("id"))
+
     incidents = [
-        inc for inc in sniffer.incidents.values()
+        inc for inc in all_incs
         if inc.get("start_epoch", 0) >= cutoff
     ]
     alerts = [
@@ -302,7 +314,7 @@ def reports_page():
 def api_report_data():
     """GET /api/reports/data?hours=<n> — JSON report data."""
     try:
-        hours = min(int(request.args.get("hours", 24)), 168)
+        hours = max(1, min(int(request.args.get("hours", 24)), 168))
     except (ValueError, TypeError):
         hours = 24
     data = _gather(hours)
@@ -322,7 +334,7 @@ def api_report_pdf():
         }), 503
 
     try:
-        hours = min(int(request.args.get("hours", 24)), 168)
+        hours = max(1, min(int(request.args.get("hours", 24)), 168))
     except (ValueError, TypeError):
         hours = 24
 

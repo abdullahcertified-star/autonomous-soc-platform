@@ -21,7 +21,7 @@ from datetime import datetime
 
 _SQLI = [
     re.compile(r"\b(union\s+select|select\s+\S+\s+from|insert\s+into|update\s+\S+\s+set|delete\s+from|drop\s+table|create\s+table|alter\s+table)\b", re.I),
-    re.compile(r"(--|#|\/\*[\s\S]*?\*\/)", re.I),
+    re.compile(r"(--\s+|;\s*--|/\*[\s\S]*?\*/)", re.I),
     re.compile(r"\b(or|and)\b\s+\d+\s*=\s*\d+", re.I),
     re.compile(r"(sleep\s*\(\s*\d+|benchmark\s*\(|waitfor\s+delay\b)", re.I),
     re.compile(r"\b(xp_cmdshell|information_schema|sysobjects|syscolumns|sys\.tables)\b", re.I),
@@ -94,6 +94,8 @@ def inspect_request(ip: str, path: str, args: dict, form: dict, body: str = "") 
     Side-effect: appends to web_events and increments ip_attack_counts.
     """
     candidates = []
+    if path:
+        candidates.append(path)
 
     for param_dict in (args, form):
         for key, val in param_dict.items():

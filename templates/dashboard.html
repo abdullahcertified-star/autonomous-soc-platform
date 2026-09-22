@@ -1,4 +1,4 @@
-﻿{% extends "base_soc.html" %}
+{% extends "base_soc.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}SOC Dashboard — Live Monitoring{% endblock %}
 
@@ -162,7 +162,7 @@
       </div>
     </div>
     <div id="incidents-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:4px 0;"></div>
-    <div id="incidents-empty" style="display:none;text-align:center;padding:30px 0;color:#3a3836;font-size:12px;">No active incidents</div>
+    <div id="incidents-empty" style="display:none;text-align:center;padding:30px 0;color:var(--text-muted);font-size:12px;">No active incidents</div>
   </div>
 
   <!-- Kill Chain Timeline -->
@@ -172,7 +172,7 @@
       <span class="live-badge" style="font-size:10px;"><span class="live-dot"></span>LIVE</span>
     </div>
     <div id="kill-chain-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0;"></div>
-    <div id="kill-chain-empty" style="display:none;text-align:center;padding:30px 0;color:#3a3836;font-size:12px;">No attack chains detected</div>
+    <div id="kill-chain-empty" style="display:none;text-align:center;padding:30px 0;color:var(--text-muted);font-size:12px;">No attack chains detected</div>
   </div>
 
 </div>
@@ -184,7 +184,7 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">Port Attack Heatmap</span>
-      <span style="font-size:10px;color:#3a3836;">top 10 ports</span>
+      <span style="font-size:10px;color:var(--text-muted);">top 10 ports</span>
     </div>
     <div id="port-heatmap-list" style="display:flex;flex-direction:column;gap:5px;"></div>
   </div>
@@ -193,10 +193,10 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">Hourly Attack Activity</span>
-      <span style="font-size:10px;color:#3a3836;">24h grid</span>
+      <span style="font-size:10px;color:var(--text-muted);">24h grid</span>
     </div>
     <div id="hourly-grid" class="hourly-grid"></div>
-    <div style="display:flex;justify-content:space-between;font-size:9px;color:#3a3836;margin-top:6px;">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:6px;">
       <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
     </div>
   </div>
@@ -356,7 +356,7 @@
           <div class="pred-bar-wrap"><div class="pred-bar-fill" id="pred-repeat" style="background:#a855f7;width:0%"></div></div>
           <span class="pred-pct" id="pred-repeat-pct">0%</span>
         </div>
-        <div style="margin-top:4px;font-size:10px;color:#3a3836;">
+        <div style="margin-top:4px;font-size:10px;color:var(--text-muted);">
           AI Confidence: <span id="pred-ai-conf" style="color:#c8c4be;font-family:var(--font-mono);">--</span>%
           &nbsp;|&nbsp; Deviation: <span id="pred-deviation" style="font-family:var(--font-mono);color:#eab308;">×0</span>
         </div>
@@ -381,14 +381,14 @@
         <div class="mini-stat"><div class="mini-stat-label">Deviation</div><div id="bl-dev" class="mini-stat-val">--</div></div>
       </div>
       <div id="bl-dev-bar-wrap" style="margin-top:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:9px;color:#3a3836;margin-bottom:3px;"><span>NORMAL</span><span>SUSPICIOUS</span><span>ATTACK</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-bottom:3px;"><span>NORMAL</span><span>SUSPICIOUS</span><span>ATTACK</span></div>
         <div style="position:relative;height:6px;background:#0f0f0f;border-radius:99px;overflow:hidden;">
           <div style="position:absolute;left:0;top:0;height:100%;width:40%;background:rgba(34,197,94,.3);border-radius:99px 0 0 99px;"></div>
           <div style="position:absolute;left:40%;top:0;height:100%;width:30%;background:rgba(234,179,8,.3);"></div>
           <div style="position:absolute;left:70%;top:0;height:100%;width:30%;background:rgba(239,68,68,.3);border-radius:0 99px 99px 0;"></div>
           <div id="bl-dev-marker" style="position:absolute;top:-1px;height:8px;width:3px;background:#fff;border-radius:99px;transform:translateX(-50%);left:0%;transition:left .5s ease;"></div>
         </div>
-        <div id="bl-dev-label" style="font-size:10px;color:#3a3836;margin-top:3px;"></div>
+        <div id="bl-dev-label" style="font-size:10px;color:var(--text-muted);margin-top:3px;"></div>
       </div>
     </div>
   </div>
@@ -451,8 +451,8 @@ function renderIncidents(list) {
       <span class="pill ${sevClass(inc.severity)}" style="font-size:9px;min-width:42px;text-align:center;">${escHtml(inc.severity)}</span>
       <span style="font-family:var(--font-mono);font-size:11px;color:#c8c4be;flex:1;">${escHtml(inc.src_ip)}</span>
       <span style="font-size:10px;color:#8a8880;flex:1;">${escHtml(inc.attack_type)}</span>
-      <span style="font-size:10px;color:#3a3836;font-family:var(--font-mono);">${(inc.packets||0).toLocaleString()} pkts</span>
-      <span style="font-size:10px;color:#3a3836;">${elapsed(inc.start_epoch)}</span>
+      <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">${(inc.packets||0).toLocaleString()} pkts</span>
+      <span style="font-size:10px;color:var(--text-muted);">${elapsed(inc.start_epoch)}</span>
     </div>`).join('');
 }
 
@@ -482,7 +482,7 @@ function renderKillChain(list) {
       const opacity = done ? '1' : '0.2';
       const border  = active ? `2px solid ${st.color}` : `1px solid rgba(255,255,255,.06)`;
       return `<span style="padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.06em;
-        color:${done?st.color:'#3a3836'};background:${done?st.bg:'transparent'};border:${border};
+        color:${done?st.color:'var(--text-muted)'};background:${done?st.bg:'transparent'};border:${border};
         opacity:${opacity};transition:all .3s;">${st.label}</span>
         ${i < STAGES.length-1 ? `<span style="color:${done&&kc.stages.includes(STAGES[i+1]?.id)?'#8a8880':'#2a2a3a'};font-size:10px;">──▶</span>` : ''}`;
     }).join('');
@@ -492,7 +492,7 @@ function renderKillChain(list) {
         <span style="font-family:var(--font-mono);font-size:11px;color:#c8c4be;">${escHtml(kc.ip)}</span>
         ${kc.country ? `<span style="font-size:10px;color:#8a8880;">${escHtml(kc.country)}</span>` : ''}
         <span style="margin-left:auto;font-size:10px;color:#8a8880;">${escHtml(kc.attack_type)}</span>
-        <span style="font-family:var(--font-mono);font-size:10px;color:#3a3836;">${kc.confidence}%</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">${kc.confidence}%</span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${stages}</div>
     </div>`;
@@ -859,8 +859,8 @@ function initCharts() {
       animation: { duration: 200 }, responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' } },
-        y: { ticks: { color: '#3a3836' }, grid: { color: 'rgba(30,30,30,.4)' }, beginAtZero: true },
+        x: { ticks: { color: '#8a8880' }, grid: { color: 'rgba(30,30,30,.4)' } },
+        y: { ticks: { color: '#8a8880' }, grid: { color: 'rgba(30,30,30,.4)' }, beginAtZero: true },
       },
     },
   });
@@ -892,7 +892,7 @@ function initCharts() {
       indexAxis: 'y', animation: false, responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color:'#3a3836', font:{size:10} }, grid:{ color:'rgba(30,30,30,.4)' }, beginAtZero:true },
+        x: { ticks: { color:'#8a8880', font:{size:10} }, grid:{ color:'rgba(30,30,30,.4)' }, beginAtZero:true },
         y: { ticks: { color:'#8a8880', font:{size:10,family:'var(--font-mono)'} }, grid:{ display:false } },
       },
     },
@@ -1014,7 +1014,7 @@ function renderIPActivity(pkts) {
       <td>${d.n}</td>
       <td style="font-size:10px;color:#8a8880;">${d.country}</td>
       <td><span class="pill ${pillClass(d.maxSev)}">${d.maxSev}</span></td>
-      <td>${blocked?'<span class="pill pill-blocked">BLOCKED</span>':'<span style="color:#3a3836;font-size:11px;">--</span>'}</td>
+      <td>${blocked?'<span class="pill pill-blocked">BLOCKED</span>':'<span style="color:var(--text-muted);font-size:11px;">--</span>'}</td>
       <td>${btn}</td>
     </tr>`;
   }).join('');
@@ -1063,7 +1063,7 @@ function renderProtoLegend(stats) {
       <div style="width:8px;height:8px;border-radius:50%;background:${i.color};flex-shrink:0;"></div>
       <span style="color:#8a8880;flex-shrink:0;">${i.label}</span>
       <span style="margin-left:auto;font-family:var(--font-mono);flex-shrink:0;">${i.val}</span>
-      <span style="color:#3a3836;flex-shrink:0;min-width:28px;text-align:right;">${Math.round(i.val/total*100)}%</span>
+      <span style="color:var(--text-muted);flex-shrink:0;min-width:28px;text-align:right;">${Math.round(i.val/total*100)}%</span>
     </div>`).join('');
 
   // Protocol usage bars
@@ -1093,7 +1093,7 @@ function renderBaseline(bl) {
      : bl.status==='SUSPICIOUS' ? '⚠ SUSPICIOUS — ratio ≥ 2×'
                                 : '✓ NORMAL — ratio < 2×')
     : 'calibrating baseline…';
-  lblEl.style.color = dev > 5 ? '#ef4444' : dev > 2 ? '#eab308' : '#3a3836';
+  lblEl.style.color = dev > 5 ? '#ef4444' : dev > 2 ? '#eab308' : 'var(--text-muted)';
   const pct = Math.min(100, (dev / 7) * 100);
   document.getElementById('bl-dev-marker').style.left = pct + '%';
 }
@@ -1122,7 +1122,7 @@ function renderPortHeatmap(ports) {
     const col = pct > 70 ? '#ef4444' : pct > 40 ? '#f97316' : pct > 20 ? '#eab308' : '#c8c4be';
     return `<div title="Port ${p.port} | ${p.service} | ${p.count} pkts">
       <div style="display:flex;justify-content:space-between;font-size:10px;color:#8a8880;margin-bottom:2px;">
-        <span style="font-family:var(--font-mono);">${p.port} <span style="color:#3a3836;">${p.service}</span></span>
+        <span style="font-family:var(--font-mono);">${p.port} <span style="color:var(--text-muted);">${p.service}</span></span>
         <span style="color:${col}">${p.count}</span>
       </div>
       <div style="height:5px;background:var(--bg3);border-radius:99px;overflow:hidden;">

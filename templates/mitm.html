@@ -338,7 +338,12 @@
 const MS = { state:'secure', attackerIp:null, toastShown:false };
 
 function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 // ── State transitions ──────────────────────────────────────────────────────
@@ -495,10 +500,18 @@ function renderTable(events) {
       <td style="font-size:11px;color:#8a8880;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
           title="${esc(e.msg||'')}">${esc(e.msg||'')}</td>
       <td><span class="pill ${e.severity==='HIGH'?'pill-attack':'pill-medium'}">${esc(e.severity||'—')}</span></td>
-      <td><button class="btn btn-block" style="font-size:10px;padding:2px 8px;"
-            onclick="blockIP('${esc(e.src_ip||'')}')">Block</button></td>
+      <td><button class="btn btn-block btn-block-mitm-ip" style="font-size:10px;padding:2px 8px;"
+            data-ip="${esc(e.src_ip||'')}">Block</button></td>
     </tr>`).join('');
 }
+
+document.getElementById('events-tbody')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-block-mitm-ip');
+  if (btn) {
+    const ip = btn.getAttribute('data-ip');
+    if (ip) blockIP(ip);
+  }
+});
 
 // ── Block actions ──────────────────────────────────────────────────────────
 async function blockAttacker() { if (MS.attackerIp) await blockIP(MS.attackerIp); }

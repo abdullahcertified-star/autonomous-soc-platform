@@ -1,4 +1,4 @@
-﻿"""
+"""
 notifications.py — Enterprise Alert Notification Engine
 
 Delivers SOC alerts to:
@@ -102,6 +102,17 @@ def _http_post(url: str, payload: dict, timeout: int = 5) -> bool:
         return False
 
 
+import os
+
+_app_instance = None
+
+
+def init_notifications(app) -> None:
+    """Store the Flask app instance for background daemon threads."""
+    global _app_instance
+    _app_instance = app
+
+
 def send_alert(title: str, body: str, severity: str = 'HIGH',
                src_ip: str = '', extra: dict = None) -> None:
     """
@@ -125,23 +136,40 @@ def send_alert(title: str, body: str, severity: str = 'HIGH',
 
 def _dispatch(title: str, body: str, severity: str, src_ip: str, extra: dict) -> None:
     try:
-        from extensions import db
-        from models import NotificationConfig
-        import flask
-        # Need an app context for DB access from a thread
-        app = flask.current_app._get_current_object()
-        with app.app_context():
-            configs = NotificationConfig.query.filter_by(enabled=True).all()
-            for cfg in configs:
-                if SEV_ORDER.get(severity, 0) < SEV_ORDER.get(cfg.min_severity, 0):
-                    continue
-                if not _rate_ok(cfg.id):
-                    continue
-                if cfg.channel == 'slack':
-                    _http_post(cfg.destination, _build_slack_payload(title, body, severity, src_ip))
-                elif cfg.channel == 'discord':
-                    _http_post(cfg.destination, _build_discord_payload(title, body, severity, src_ip))
-                else:
-                    _http_post(cfg.destination, _build_generic_payload(title, body, severity, src_ip, extra))
+        app = _app_instance
+        if not app:
+            try:
+                import flask
+                app = flask.current_app._get_current_object()
+            except Exception:
+                app = None
+
+        configs = []
+        if app:
+            with app.app_context():
+                from models import NotificationConfig
+                configs = NotificationConfig.query.filter_by(enabled=True).all()
+
+        for cfg in configs:
+            if SEV_ORDER.get(severity, 0) < SEV_ORDER.get(cfg.min_severity, 0):
+                continue
+            if not _rate_ok(cfg.id):
+                continue
+            if cfg.channel == 'slack':
+                _http_post(cfg.destination, _build_slack_payload(title, body, severity, src_ip))
+            elif cfg.channel == 'discord':
+                _http_post(cfg.destination, _build_discord_payload(title, body, severity, src_ip))
+            else:
+                _http_post(cfg.destination, _build_generic_payload(title, body, severity, src_ip, extra))
+
+        # Environment variable webhook fallbacks
+        slack_env = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+        if slack_env and _rate_ok(99991):
+            _http_post(slack_env, _build_slack_payload(title, body, severity, src_ip))
+
+        discord_env = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+        if discord_env and _rate_ok(99992):
+            _http_post(discord_env, _build_discord_payload(title, body, severity, src_ip))
     except Exception:
         pass
+

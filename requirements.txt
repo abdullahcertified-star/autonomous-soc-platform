@@ -76,6 +76,9 @@ charset-normalizer==3.4.7 # Character encoding detection (reportlab dep)
 # ── Environment & Configuration ───────────────────────────────────────────────
 python-dotenv==1.2.2      # Loads .env file — SECRET_KEY, SEED_ADMIN_PASSWORD, etc.
 
+# ── Agentic AI / Google GenAI SDK ─────────────────────────────────────────────
+google-genai>=2.0.0       # Google GenAI SDK (Gemini 2.5 Flash / Agentic AI)
+
 # ── Production WSGI Server (choose one per OS) ───────────────────────────────
 #
 # Linux (recommended — supports WebSocket via eventlet):

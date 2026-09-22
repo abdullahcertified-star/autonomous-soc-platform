@@ -288,6 +288,20 @@
       </li>
 
       <li>
+        <a href="javascript:void(0)" onclick="openAiCopilot()" class="nav-item" id="nav-ai-copilot" title="SOCO — Autonomous AI Security Analyst">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+            <rect x="4" y="8" width="16" height="12" rx="3"/>
+            <circle cx="9" cy="13" r="1.5" fill="currentColor"/>
+            <circle cx="15" cy="13" r="1.5" fill="currentColor"/>
+            <path d="M9 17h6"/>
+          </svg>
+          <span class="nav-text">SOCO</span>
+          <span class="ai-badge">Agentic</span>
+        </a>
+      </li>
+
+      <li>
         <a href="{{ url_for('report.reports_page') }}"
            class="nav-item {% if request.endpoint == 'report.reports_page' %}active{% endif %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -314,7 +328,7 @@
         </a>
       </li>
 
-      {% if current_user.role == 'admin' %}
+      {% if current_user.has_role('admin') or current_user.role == 'admin' or current_user.can('users', 'read') or current_user.can('roles', 'read') %}
       <li class="nav-section-label" style="margin-top:4px;">Admin</li>
       <li>
         <a href="{{ url_for('settings.admin_pending_users') }}"
@@ -348,11 +362,11 @@
 
     <div class="sidebar-footer">
       <div class="sidebar-user">
-        <div class="sidebar-avatar">{{ current_user.username[0] }}</div>
+        <div class="sidebar-avatar">{{ (current_user.username or 'U')[0]|upper }}</div>
         <div class="sidebar-user-info">
           <div class="sidebar-username">{{ current_user.username }}</div>
         </div>
-        <a href="{{ url_for('auth.logout') }}" class="logout-link">Out</a>
+        <a href="{{ url_for('auth.logout') }}" class="logout-link" title="Logout">Logout</a>
       </div>
     </div>
   </nav>
@@ -464,11 +478,17 @@
               <span class="tip-value" id="tip-normal">—</span>
             </div>
             <div class="tip-row">
-              <span class="tip-label">Attack &gt;</span>
+              <span class="tip-label">Attack Trigger &gt;</span>
               <span class="tip-value" id="tip-attack">—</span>
             </div>
           </div>
         </div>
+
+        <!-- AI Copilot Topbar Button -->
+        <button class="ai-copilot-top-btn" onclick="openAiCopilot()" title="Open SOCO — AI Security Analyst">
+          <span class="ai-btn-dot"></span>
+          <span>🤖 SOCO</span>
+        </button>
 
         <div class="soc-clock" id="soc-clock">--:-- --</div>
       </div>
@@ -798,5 +818,323 @@ function toggleSidebar() {
   });
 })();
 </script>
+
+  <!-- ═══ FLOATING SOCO AI WIDGET (DRAGGABLE FAB) ═══ -->
+  <div id="ai-copilot-floating-btn" class="ai-copilot-floating-btn" title="Drag to reposition • Click to open SOCO" role="button" tabindex="0" aria-label="Open SOCO AI Security Analyst">
+    <span class="ai-drag-handle" title="Drag to move">⠿</span>
+    <span class="ai-btn-dot"></span>
+    <span class="ai-fab-label">🤖 SOCO</span>
+  </div>
+
+  <!-- ═══ AI COPILOT SLIDE-OUT DRAWER ═══ -->
+  <div id="ai-copilot-overlay" class="ai-overlay" onclick="closeAiCopilot()"></div>
+  <aside id="ai-copilot-drawer" class="ai-drawer" aria-label="SOCO — AI Security Analyst">
+    <div class="ai-drawer-header">
+      <div class="ai-header-left">
+        <span style="font-size:20px;">🤖</span>
+        <div>
+          <div class="ai-header-title">SOCO — AI Security Analyst</div>
+          <span class="ai-status-pill" id="ai-drawer-status">
+            <span class="ai-btn-dot"></span>
+            <span id="ai-drawer-model">Detecting AI Engine...</span>
+          </span>
+        </div>
+      </div>
+      <button class="ai-close-btn" onclick="closeAiCopilot()" title="Close SOCO">✕</button>
+    </div>
+
+    <!-- Quick action chips -->
+    <div class="ai-chips-bar">
+      <button class="ai-chip" onclick="sendAiQuickPrompt('Investigate top attacker and recommend action')">🔍 Top Attacker</button>
+      <button class="ai-chip" onclick="sendAiQuickPrompt('Audit active attacks and incidents')">🚨 Active Attacks</button>
+      <button class="ai-chip" onclick="sendAiQuickPrompt('Check threat intelligence status for 185.220.101.1')">🌐 Threat Intel</button>
+      <button class="ai-chip" onclick="sendAiQuickPrompt('Show recent network traffic telemetry logs')">📋 Traffic Logs</button>
+      <button class="ai-chip" onclick="sendAiQuickPrompt('Report system security posture and firewall status')">🛡️ Posture Report</button>
+    </div>
+
+    <!-- Message Stream -->
+    <div class="ai-messages-container" id="ai-messages-container">
+      <div class="ai-msg agent">
+        <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+          <span>🤖</span> <span>SOCO Analyst Online</span>
+        </div>
+        <div style="font-size:12.5px;line-height:1.45;">
+          I am <strong>SOCO</strong>, your AI Security Analyst & Chatbot. Chat with me directly for security guidance or ask me to autonomously investigate threats and manage firewall containment.
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#94a3b8;">
+          Try: <code>Investigate 192.168.1.50</code> • <code>Audit active attacks</code> • <code>Block 185.220.101.5</code> • <em>or chat naturally</em>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Box -->
+    <form class="ai-input-bar" id="ai-chat-form" onsubmit="handleAiChatSubmit(event)">
+      <input type="text" id="ai-chat-input" class="ai-input-field" placeholder="Ask SOCO (e.g. 'Investigate 192.168.75.129')..." autocomplete="off" />
+      <button type="submit" id="ai-chat-send" class="ai-send-btn">Send</button>
+    </form>
+  </aside>
+
+  <script>
+  (function initAiCopilot() {
+    let _aiChatHistory = [];
+    let _aiStatusFetched = false;
+
+    window.openAiCopilot = function() {
+      const drawer = document.getElementById('ai-copilot-drawer');
+      const overlay = document.getElementById('ai-copilot-overlay');
+      if (drawer && overlay) {
+        drawer.classList.add('open');
+        overlay.classList.add('open');
+        document.getElementById('ai-chat-input')?.focus();
+        if (!_aiStatusFetched) fetchAiStatus();
+      }
+    };
+
+    window.closeAiCopilot = function() {
+      const drawer = document.getElementById('ai-copilot-drawer');
+      const overlay = document.getElementById('ai-copilot-overlay');
+      if (drawer && overlay) {
+        drawer.classList.remove('open');
+        overlay.classList.remove('open');
+      }
+    };
+
+    function fetchAiStatus() {
+      fetch('/api/ai/status')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!d) return;
+          _aiStatusFetched = true;
+          const modelEl = document.getElementById('ai-drawer-model');
+          const statusPill = document.getElementById('ai-drawer-status');
+          if (modelEl) {
+            modelEl.textContent = d.model + (d.is_gemini ? ' (Gemini ADK)' : ' (Local)');
+          }
+          if (statusPill && !d.is_gemini) {
+            statusPill.classList.add('heuristic');
+          }
+        })
+        .catch(() => {});
+    }
+
+    // ── Draggable Floating Action Button (SOCO FAB) ──────────────────────────
+    const fab = document.getElementById('ai-copilot-floating-btn');
+    if (fab) {
+      let isDragging = false;
+      let startX = 0, startY = 0;
+      let initialLeft = 0, initialTop = 0;
+      let hasMoved = false;
+
+      // Restore saved position from localStorage
+      try {
+        const saved = localStorage.getItem('soco_fab_pos');
+        if (saved) {
+          const pos = JSON.parse(saved);
+          if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+            const maxL = Math.max(10, window.innerWidth - 130);
+            const maxT = Math.max(10, window.innerHeight - 50);
+            const l = Math.min(Math.max(10, pos.left), maxL);
+            const t = Math.min(Math.max(10, pos.top), maxT);
+            fab.style.left = l + 'px';
+            fab.style.top = t + 'px';
+            fab.style.right = 'auto';
+            fab.style.bottom = 'auto';
+          }
+        }
+      } catch (_) {}
+
+      function onPointerDown(e) {
+        if (e.type === 'mousedown' && e.button !== 0) return;
+
+        isDragging = true;
+        hasMoved = false;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        startX = clientX;
+        startY = clientY;
+
+        const rect = fab.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+
+        fab.classList.add('is-dragging');
+
+        window.addEventListener('mousemove', onPointerMove, { passive: false });
+        window.addEventListener('touchmove', onPointerMove, { passive: false });
+        window.addEventListener('mouseup', onPointerUp);
+        window.addEventListener('touchend', onPointerUp);
+      }
+
+      function onPointerMove(e) {
+        if (!isDragging) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          hasMoved = true;
+          if (e.cancelable) e.preventDefault();
+        }
+
+        if (hasMoved) {
+          const maxLeft = Math.max(10, window.innerWidth - fab.offsetWidth - 10);
+          const maxTop = Math.max(10, window.innerHeight - fab.offsetHeight - 10);
+
+          let newLeft = Math.min(Math.max(10, initialLeft + dx), maxLeft);
+          let newTop = Math.min(Math.max(10, initialTop + dy), maxTop);
+
+          fab.style.left = newLeft + 'px';
+          fab.style.top = newTop + 'px';
+          fab.style.right = 'auto';
+          fab.style.bottom = 'auto';
+        }
+      }
+
+      function onPointerUp() {
+        if (!isDragging) return;
+        isDragging = false;
+        fab.classList.remove('is-dragging');
+
+        window.removeEventListener('mousemove', onPointerMove);
+        window.removeEventListener('touchmove', onPointerMove);
+        window.removeEventListener('mouseup', onPointerUp);
+        window.removeEventListener('touchend', onPointerUp);
+
+        if (hasMoved) {
+          const rect = fab.getBoundingClientRect();
+          try {
+            localStorage.setItem('soco_fab_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+          } catch (_) {}
+        } else {
+          openAiCopilot();
+        }
+      }
+
+      fab.addEventListener('mousedown', onPointerDown);
+      fab.addEventListener('touchstart', onPointerDown, { passive: false });
+
+      fab.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openAiCopilot();
+        }
+      });
+
+      window.addEventListener('resize', function() {
+        if (fab.style.left) {
+          const rect = fab.getBoundingClientRect();
+          const maxL = Math.max(10, window.innerWidth - fab.offsetWidth - 10);
+          const maxT = Math.max(10, window.innerHeight - fab.offsetHeight - 10);
+          const l = Math.min(Math.max(10, rect.left), maxL);
+          const t = Math.min(Math.max(10, rect.top), maxT);
+          fab.style.left = l + 'px';
+          fab.style.top = t + 'px';
+        }
+      });
+    }
+
+    window.sendAiQuickPrompt = function(promptText) {
+      const input = document.getElementById('ai-chat-input');
+      if (input) {
+        input.value = promptText;
+        handleAiChatSubmit(new Event('submit'));
+      }
+    };
+
+    window.handleAiChatSubmit = async function(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('ai-chat-input');
+      const sendBtn = document.getElementById('ai-chat-send');
+      const container = document.getElementById('ai-messages-container');
+      if (!input || !container) return;
+
+      const prompt = input.value.trim();
+      if (!prompt) return;
+
+      // Append user message
+      const userBubble = document.createElement('div');
+      userBubble.className = 'ai-msg user';
+      userBubble.textContent = prompt;
+      container.appendChild(userBubble);
+      input.value = '';
+      sendBtn.disabled = true;
+
+      // Append loading indicator
+      const loadingBubble = document.createElement('div');
+      loadingBubble.className = 'ai-msg agent';
+      loadingBubble.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;"><span class="ai-btn-dot"></span> <em>SOCO is thinking...</em></span>';
+      container.appendChild(loadingBubble);
+      container.scrollTop = container.scrollHeight;
+
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+      try {
+        const res = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrf
+          },
+          body: JSON.stringify({
+            prompt: prompt,
+            history: _aiChatHistory
+          })
+        });
+
+        const data = await res.json();
+        if (loadingBubble.parentNode) container.removeChild(loadingBubble);
+
+        const agentBubble = document.createElement('div');
+        agentBubble.className = 'ai-msg agent';
+
+        let html = '';
+
+        // Render tool calls if any were executed
+        if (data.tool_calls && data.tool_calls.length > 0) {
+          data.tool_calls.forEach(tc => {
+            const argsStr = Object.entries(tc.args || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+            html += `<div class="ai-tool-callout">⚡ <strong>Tool:</strong> ${tc.name}(${argsStr})</div>`;
+          });
+        }
+
+        // Clean Markdown formatter: short scannable bullets, headers, bold terms
+        let formatted = (data.response || 'No response generated')
+          .replace(/### (.*?)(?:\n|$)/g, '<h3 style="font-size:13px;font-weight:700;color:#f8fafc;margin:6px 0 8px;">$1</h3>')
+          .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#f1f5f9;">$1</strong>')
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\n\n/g, '<br/><br/>')
+          .replace(/\n[•\-] (.*?)(?=\n|$)/g, '<div style="margin:3px 0 3px 2px;display:flex;align-items:baseline;gap:6px;"><span style="color:#c084fc;font-weight:bold;">•</span><span>$1</span></div>')
+          .replace(/^[•\-] (.*?)(?=\n|$)/g, '<div style="margin:3px 0 3px 2px;display:flex;align-items:baseline;gap:6px;"><span style="color:#c084fc;font-weight:bold;">•</span><span>$1</span></div>');
+
+        html += `<div>${formatted}</div>`;
+
+        if (data.warning) {
+          html += `<div style="margin-top:8px;font-size:10px;color:#facc15;">ℹ️ ${data.warning}</div>`;
+        }
+
+        agentBubble.innerHTML = html;
+        container.appendChild(agentBubble);
+
+        _aiChatHistory.push({ role: 'user', content: prompt });
+        _aiChatHistory.push({ role: 'model', content: data.response || '' });
+        if (_aiChatHistory.length > 10) _aiChatHistory = _aiChatHistory.slice(-10);
+
+      } catch (err) {
+        if (loadingBubble.parentNode) container.removeChild(loadingBubble);
+        const errBubble = document.createElement('div');
+        errBubble.className = 'ai-msg agent';
+        errBubble.innerHTML = `<span style="color:#f87171;">⚠️ Error connecting to SOCO agent: ${err.message}</span>`;
+        container.appendChild(errBubble);
+      } finally {
+        sendBtn.disabled = false;
+        container.scrollTop = container.scrollHeight;
+        input.focus();
+      }
+    };
+  })();
+  </script>
 </body>
 </html>

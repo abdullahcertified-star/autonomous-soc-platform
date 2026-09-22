@@ -258,7 +258,12 @@ let _activeCase   = null;   // full case object, used by export + delete
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return (s == null ? '' : String(s))
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 function sevColor(sev) {
   return {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fcd34d',LOW:'#86efac'}[sev] || '#9ca3af';
@@ -316,7 +321,7 @@ async function loadCases() {
       : Math.round(c.age_hours) + 'h';
     const delBtn = `<button
          data-del-id="${c.id}"
-         data-del-case="${c.case_id}"
+         data-del-case="${escHtml(c.case_id)}"
          data-del-title="${escHtml(c.title)}"
          onclick="event.stopPropagation();deleteCaseById(this)"
          title="Delete case"
@@ -332,13 +337,13 @@ async function loadCases() {
          </svg>
        </button>`;
     return `<tr onclick="openDrawer(${c.id})">
-      <td style="font-family:monospace;font-size:11px;color:var(--accent);">${c.case_id}</td>
-      <td>${escHtml(c.title)}</td>
-      <td><span style="color:${sevColor(c.severity)};font-weight:700;font-size:12px;">${c.severity}</span></td>
-      <td><span class="badge-status ${statusClass(c.status)}">${c.status.replace('_',' ')}</span></td>
-      <td style="font-size:12px;">${c.assigned_to || '<span style="color:var(--text-muted)">Unassigned</span>'}</td>
+      <td style="font-family:monospace;font-size:11px;color:var(--accent);">${escHtml(c.case_id || '')}</td>
+      <td>${escHtml(c.title || '')}</td>
+      <td><span style="color:${sevColor(c.severity)};font-weight:700;font-size:12px;">${escHtml(c.severity || '')}</span></td>
+      <td><span class="badge-status ${statusClass(c.status)}">${escHtml((c.status || '').replace('_',' '))}</span></td>
+      <td style="font-size:12px;">${c.assigned_to ? escHtml(c.assigned_to) : '<span style="color:var(--text-muted)">Unassigned</span>'}</td>
       <td>${sla}</td>
-      <td style="font-size:11px;color:var(--text-muted);">${c.source}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${escHtml(fmtSource(c.source))}</td>
       <td style="font-size:11px;color:var(--text-muted);">${age}</td>
       <td class="col-actions" style="text-align:center;">${delBtn}</td>
     </tr>`;
@@ -353,20 +358,20 @@ async function openDrawer(id) {
   const c = await r.json();
   _activeCase = c;
 
-  document.getElementById('dr-case-id').textContent = c.case_id;
-  document.getElementById('dr-title').textContent   = c.title;
+  document.getElementById('dr-case-id').textContent = c.case_id || '';
+  document.getElementById('dr-title').textContent   = c.title || '';
 
   // Meta rows
   const deadline = fmtDate(c.sla_deadline);
   document.getElementById('dr-meta').innerHTML = `
-    <div class="meta-row"><span class="mk">Severity</span><span class="mv" style="color:${sevColor(c.severity)};font-weight:700;">${c.severity}</span></div>
-    <div class="meta-row"><span class="mk">Status</span><span class="mv"><span class="badge-status ${statusClass(c.status)}">${c.status.replace('_',' ')}</span></span></div>
-    <div class="meta-row"><span class="mk">Assigned To</span><span class="mv">${c.assigned_to || 'Unassigned'}</span></div>
-    <div class="meta-row"><span class="mk">Source IP</span><span class="mv" style="font-family:monospace;">${c.src_ip || '—'}</span></div>
-    <div class="meta-row"><span class="mk">Attack Type</span><span class="mv">${c.attack_type || '—'}</span></div>
+    <div class="meta-row"><span class="mk">Severity</span><span class="mv" style="color:${sevColor(c.severity)};font-weight:700;">${escHtml(c.severity || '')}</span></div>
+    <div class="meta-row"><span class="mk">Status</span><span class="mv"><span class="badge-status ${statusClass(c.status)}">${escHtml((c.status || '').replace('_',' '))}</span></span></div>
+    <div class="meta-row"><span class="mk">Assigned To</span><span class="mv">${escHtml(c.assigned_to || 'Unassigned')}</span></div>
+    <div class="meta-row"><span class="mk">Source IP</span><span class="mv" style="font-family:monospace;">${escHtml(c.src_ip || '—')}</span></div>
+    <div class="meta-row"><span class="mk">Attack Type</span><span class="mv">${escHtml(c.attack_type || '—')}</span></div>
     <div class="meta-row"><span class="mk">Created</span><span class="mv">${fmtDate(c.created_at)}</span></div>
-    <div class="meta-row"><span class="mk">SLA Deadline</span><span class="mv ${c.sla_breached ? 'sla-warn' : 'sla-ok'}">${deadline}${c.sla_breached ? ' ⚠' : ''}</span></div>
-    <div class="meta-row"><span class="mk">Notes</span><span class="mv">${c.note_count}</span></div>
+    <div class="meta-row"><span class="mk">SLA Deadline</span><span class="mv ${c.sla_breached ? 'sla-warn' : 'sla-ok'}">${escHtml(deadline)}${c.sla_breached ? ' ⚠' : ''}</span></div>
+    <div class="meta-row"><span class="mk">Notes</span><span class="mv">${Number(c.note_count) || 0}</span></div>
   `;
 
   // MITRE
@@ -485,13 +490,25 @@ async function deleteCaseById(btn) {
   }
 }
 
+function fmtSource(s) {
+  if (!s) return '—';
+  const m = {
+    'correlation': 'Automated SIEM Correlation Engine',
+    'ai_agent':    'Autonomous AI SOC Agent',
+    'manual':      'Analyst Manual Entry',
+    'sniffer':     'Network IDS Sensor',
+    'ids':         'Network IDS Sensor'
+  };
+  return m[String(s).toLowerCase()] || s;
+}
+
 // ── Export PDF — direct download via jsPDF ────────────────────────────────────
 
 async function exportCasePdf() {
   if (!_activeCase) return;
   const c = _activeCase;
 
-  // Load jsPDF + autoTable from CDN (cached after first use).
+  // Load jsPDF + autoTable (local static first, CDN fallback).
   const loadScript = src => new Promise((res, rej) => {
     if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
     const s = document.createElement('script');
@@ -500,8 +517,15 @@ async function exportCasePdf() {
   });
   showToast('Generating PDF…', 'success');
   try {
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    if (!window.jspdf) {
+      try {
+        await loadScript('/static/jspdf.umd.min.js');
+        await loadScript('/static/jspdf.plugin.autotable.min.js');
+      } catch(_) {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+      }
+    }
   } catch(e) { showToast('Failed to load PDF library — check internet.', 'error'); return; }
 
   const { jsPDF } = window.jspdf;
@@ -570,14 +594,14 @@ async function exportCasePdf() {
     startY: y,
     head: [['Field', 'Value']],
     body: [
-      ['Source IP',    c.src_ip      || '—'],
-      ['Attack Type',  c.attack_type || '—'],
-      ['Assigned To',  c.assigned_to || 'Unassigned'],
-      ['Source',       c.source      || '—'],
-      ['Created',      fmtD(c.created_at)],
-      ['Last Updated', fmtD(c.updated_at)],
-      ['SLA Deadline', fmtD(c.sla_deadline) + (c.sla_breached ? '  ⚠ BREACHED' : '')],
-      ['Resolved At',  fmtD(c.resolved_at)],
+      ['Source IP',        c.src_ip      || '—'],
+      ['Attack Type',      c.attack_type || '—'],
+      ['Detection Origin', fmtSource(c.source)],
+      ['Assigned To',      c.assigned_to || 'Unassigned'],
+      ['Created',          fmtD(c.created_at)],
+      ['Last Updated',     fmtD(c.updated_at)],
+      ['SLA Deadline',     fmtD(c.sla_deadline) + (c.sla_breached ? '  ⚠ BREACHED' : '')],
+      ['Resolved At',      fmtD(c.resolved_at)],
     ],
     styles:      { fontSize:8.5, cellPadding:3, font:'helvetica' },
     headStyles:  { fillColor:[30,58,95], textColor:[241,245,249], fontStyle:'bold', fontSize:7.5 },
@@ -769,7 +793,7 @@ async function exportCasePdf() {
       ${row('Source IP',    escHtml(c.src_ip      || '—'), true)}
       ${row('Attack Type',  escHtml(c.attack_type || '—'), false)}
       ${row('Assigned To',  escHtml(c.assigned_to || 'Unassigned'), false)}
-      ${row('Source',       escHtml(c.source      || '—'), false)}
+      ${row('Detection Origin', escHtml(fmtSource(c.source)), false)}
       ${row('Created',      fmtDate(c.created_at), false)}
       ${row('Last Updated', fmtDate(c.updated_at), false)}
       ${row('SLA Deadline',

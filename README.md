@@ -1,8 +1,14 @@
-# 🛡️ SOC / SIEM Platform
+# 🛡️ Autonomous SOC Platform & 3D Threat Globe
 
-A self-hosted Security Operations Center built with Flask — live packet capture, multi-layer
-intrusion detection, automated firewall response, case management, and PDF incident reporting,
-all behind a role-based authenticated dashboard.
+> **A real-time Security Operations Center (SOC) platform featuring an interactive 3D Attack Globe, Scapy packet streaming, automated firewall containment, and SOCO — an autonomous agentic AI cybersecurity analyst.**
+
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Backend-Flask%20%7C%20Socket.IO-black.svg)](https://flask.palletsprojects.com/)
+[![Three.js](https://img.shields.io/badge/Frontend-Three.js%20Globe-brightgreen.svg)](https://threejs.org/)
+[![AI Engine](https://img.shields.io/badge/AI%20Copilot-SOCO%20%7C%20Gemini-orange.svg)](https://deepmind.google/technologies/gemini/)
+[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+
+An enterprise-ready, self-hosted Security Operations Center built with Python, Flask, Three.js, and Scapy — combining live packet capture, multi-layer intrusion detection, automated firewall response, case management, and SOCO AI analyst capabilities.
 
 > **Authorized use only.** This platform captures traffic, port-scans hosts, and blocks IPs on the
 > machine it runs on. Only point it at networks and systems you own or are explicitly permitted to test.

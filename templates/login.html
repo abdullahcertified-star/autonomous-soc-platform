@@ -154,8 +154,9 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+    <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
 
       <div class="form-group">
         <label for="identifier">Email or Username</label>

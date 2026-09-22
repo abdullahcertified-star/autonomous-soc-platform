@@ -161,7 +161,7 @@
       <span class="card-title">Simulation Mode</span>
       <span id="sim-status-pill"
             style="font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;
-                   background:rgba(58,56,54,.3);color:#3a3836;border:1px solid rgba(58,56,54,.4);">
+                   background:rgba(138,136,128,.15);color:#8a8880;border:1px solid rgba(138,136,128,.3);">
         INACTIVE
       </span>
     </div>
@@ -178,11 +178,6 @@
         </svg>
         Clear Event Log
       </button>
-      <span id="sim-save-msg" style="font-size:11px;color:#22c55e;display:none;">Saved.</span>
-    </div>
-  </div>
-
-  <div style="padding:16px 20px;">
 
     <!-- What sim mode does -->
     <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);
@@ -204,23 +199,23 @@
     <!-- Stats row -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;">
       <div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:10px;color:#3a3836;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Total Events</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Total Events</div>
         <div id="sim-stat-total" style="font-size:22px;font-weight:700;color:#f59e0b;">0</div>
       </div>
       <div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:10px;color:#3a3836;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Blocks Suppressed</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Blocks Suppressed</div>
         <div id="sim-stat-blocks" style="font-size:22px;font-weight:700;color:#f87171;">0</div>
       </div>
       <div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:10px;color:#3a3836;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Alerts Suppressed</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Alerts Suppressed</div>
         <div id="sim-stat-alerts" style="font-size:22px;font-weight:700;color:#fbbf24;">0</div>
       </div>
       <div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:10px;color:#3a3836;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Web IDS Suppressed</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Web IDS Suppressed</div>
         <div id="sim-stat-webids" style="font-size:22px;font-weight:700;color:#c084fc;">0</div>
       </div>
       <div style="background:#0f0f0f;border:1px solid #1e1e1e;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:10px;color:#3a3836;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Unblocks Suppressed</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Unblocks Suppressed</div>
         <div id="sim-stat-unblocks" style="font-size:22px;font-weight:700;color:#34d399;">0</div>
       </div>
     </div>
@@ -233,7 +228,7 @@
       <button class="sim-filter-btn" data-action="UNBLOCK_SUPPRESSED"  onclick="setSimFilter(this,'UNBLOCK_SUPPRESSED')">Unblocks</button>
       <button class="sim-filter-btn" data-action="ALERT_SUPPRESSED"    onclick="setSimFilter(this,'ALERT_SUPPRESSED')">Alerts</button>
       <button class="sim-filter-btn" data-action="WEBIDS_SUPPRESSED"   onclick="setSimFilter(this,'WEBIDS_SUPPRESSED')">Web IDS</button>
-      <span style="margin-left:auto;font-size:11px;color:#3a3836;" id="sim-last-update"></span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);" id="sim-last-update"></span>
     </div>
 
     <!-- Event feed -->
@@ -242,18 +237,18 @@
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
         <thead>
           <tr style="position:sticky;top:0;background:#0f0f0f;z-index:1;">
-            <th style="padding:8px 12px;text-align:left;color:#3a3836;font-size:10px;
+            <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;
                        text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;border-bottom:1px solid #1e1e1e;">Time</th>
-            <th style="padding:8px 12px;text-align:left;color:#3a3836;font-size:10px;
+            <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;
                        text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1e1e1e;">Action</th>
-            <th style="padding:8px 12px;text-align:left;color:#3a3836;font-size:10px;
+            <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;
                        text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1e1e1e;">IP</th>
-            <th style="padding:8px 12px;text-align:left;color:#3a3836;font-size:10px;
+            <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;
                        text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1e1e1e;">Detail</th>
           </tr>
         </thead>
         <tbody id="sim-events-body">
-          <tr><td colspan="4" style="text-align:center;padding:32px;color:#3a3836;font-size:12px;">
+          <tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-muted);font-size:12px;">
             No simulation events recorded yet.
           </td></tr>
         </tbody>
@@ -340,7 +335,10 @@ document.getElementById('btn-save').addEventListener('click', async () => {
 document.getElementById('btn-reset').addEventListener('click', async () => {
   if (!confirm('Reset all captured data, incidents, and detection state? This cannot be undone.')) return;
   try {
-    const res = await fetch('/api/reset', { method: 'POST' });
+    const res = await fetch('/api/reset', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrf() }
+    });
     if (res.ok) showToast('System data reset successfully.', 'success');
   } catch(e) { showToast('Reset failed.', 'error'); }
 });
@@ -434,9 +432,9 @@ async function loadSimEvents() {
     const pill   = document.getElementById('sim-status-pill');
     const active = d.active;
     pill.textContent = active ? 'ACTIVE' : 'INACTIVE';
-    pill.style.background    = active ? 'rgba(245,158,11,.2)'  : 'rgba(58,56,54,.3)';
-    pill.style.color         = active ? '#f59e0b'              : '#3a3836';
-    pill.style.borderColor   = active ? 'rgba(245,158,11,.4)'  : 'rgba(58,56,54,.4)';
+    pill.style.background    = active ? 'rgba(245,158,11,.2)'  : 'rgba(138,136,128,.15)';
+    pill.style.color         = active ? '#f59e0b'              : '#8a8880';
+    pill.style.borderColor   = active ? 'rgba(245,158,11,.4)'  : 'rgba(138,136,128,.3)';
 
     // Update sim panel border
     const panel = document.getElementById('sim-panel');
@@ -458,7 +456,7 @@ async function loadSimEvents() {
     const tbody  = document.getElementById('sim-events-body');
     const events = d.events || [];
     if (!events.length) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:32px;color:#3a3836;font-size:12px;">
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-muted);font-size:12px;">
         ${active ? 'No events recorded yet — detections will appear here.' : 'Enable Simulation Mode to start recording.'}
       </td></tr>`;
       return;
@@ -470,7 +468,7 @@ async function loadSimEvents() {
                             background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}55;
                             white-space:nowrap;">${meta.label}</span>`;
       return `<tr style="border-bottom:1px solid #141414;" onmouseover="this.style.background='rgba(255,255,255,.02)'" onmouseout="this.style.background=''">
-        <td style="padding:8px 12px;color:#3a3836;white-space:nowrap;" title="${fmtSimTime(ev.timestamp)}">${timeAgoSim(ev.timestamp)}</td>
+        <td style="padding:8px 12px;color:var(--text-muted);white-space:nowrap;" title="${fmtSimTime(ev.timestamp)}">${timeAgoSim(ev.timestamp)}</td>
         <td style="padding:8px 12px;">${pill}</td>
         <td style="padding:8px 12px;font-family:monospace;color:#c8c4be;font-size:11px;">${ev.ip || '--'}</td>
         <td style="padding:8px 12px;color:#8a8880;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"

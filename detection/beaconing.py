@@ -1,4 +1,4 @@
-﻿"""
+"""
 beaconing.py — C2 Beaconing & Lateral Movement Detection
 
 Detects two attack patterns without touching the existing detection pipeline:
@@ -86,6 +86,21 @@ def observe(src_ip: str, dst_ip: str, now: float = None) -> None:
 
 
 def _check_beaconing(src: str, dst: str, now: float) -> None:
+    try:
+        from detection import network_profiler
+        if not network_profiler.is_ready():
+            return
+    except Exception:
+        pass
+
+    # Exclude internal-to-internal host polling/heartbeats from C2 beaconing
+    try:
+        from detection import sniffer
+        if src in sniffer._get_host_ips() and _is_private(dst):
+            return
+    except Exception:
+        pass
+
     key = (src, dst)
     times = list(_flow_times[key])
     if len(times) < MIN_SAMPLES:
@@ -147,8 +162,23 @@ def _check_beaconing(src: str, dst: str, now: float) -> None:
 
 
 def _check_lateral(src: str, now: float) -> None:
+    try:
+        from detection import network_profiler
+        if not network_profiler.is_ready():
+            return
+    except Exception:
+        pass
+
     if not _is_private(src):
         return
+
+    # Never flag the SOC monitoring host itself when it performs device discovery
+    try:
+        from detection import sniffer
+        if src in sniffer._get_host_ips() or src.startswith("127."):
+            return
+    except Exception:
+        pass
 
     dsts = _lateral_map.get(src, set())
     if len(dsts) < LATERAL_THRESHOLD:

@@ -128,6 +128,15 @@ _dst_cooldown: dict     = {}
 _dst_confidence: dict   = {}
 
 
+def _profiler_ready() -> bool:
+    """Check if network profiler has finished baseline calibration."""
+    try:
+        from detection import network_profiler
+        return network_profiler.is_ready()
+    except Exception:
+        return True
+
+
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────
@@ -236,6 +245,11 @@ def record_packet(src_ip: str, dst_ip: str,
     ip_rate       = len(_src_ts[src_ip])
     global_rate   = len(_global_ts)
     burst_rate_1s = len(_burst_ts[src_ip])
+
+    # ── Profiler Calibration Guard ──
+    # Hold attack detection while the network profiler is learning normal baseline
+    if not _profiler_ready():
+        return None, 0, ip_rate
 
     # ── Cooldown guard ──
     # Only honour cooldown when traffic is genuinely calm — both the 5-second
@@ -446,6 +460,10 @@ def record_dst_packet(dst_ip: str, src_ip: str, dst_port: int = 0,
     dst_rate = len(_dst_rate_ts[dst_ip])
     cutoff   = now - w
 
+    # ── Profiler Calibration Guard ──
+    if not _profiler_ready():
+        return None, 0, dst_rate, "Normal"
+
     # Unique source IPs that have sent packets to this dst in the last rate_window
     unique_srcs = sum(
         1 for src_dq in _dst_src_dq[dst_ip].values()
@@ -561,7 +579,8 @@ def get_baseline_stats() -> dict:
     """
     mean, std = _get_baseline()
     curr = get_global_rate()
-    ready = len(_baseline_samples) >= config["min_baseline_samples"]
+    profiler_ok = _profiler_ready()
+    ready = len(_baseline_samples) >= config["min_baseline_samples"] and profiler_ok
 
     # Deviation: ratio of current global rate to baseline mean
     deviation = round(curr / mean, 2) if (ready and mean > 0) else 0.0
@@ -572,12 +591,17 @@ def get_baseline_stats() -> dict:
     # Adaptive upper boundary: mean + 5σ  (display only)
     adaptive_upper = round(mean + config["suspicious_deviation"] * std, 1) if ready else 0.0
 
-    # Status based on deviation ratio thresholds
-    if deviation < config["normal_deviation"]:       # ratio < 2.0 → NORMAL
+    # Status based on deviation ratio thresholds AND absolute rate floor.
+    # While profiler is calibrating, status is CALIBRATING.
+    if not profiler_ok:
+        status = "CALIBRATING"
+    elif curr <= config["abs_normal_rate"] or curr < 200:
+        status = "NORMAL"
+    elif deviation < config["normal_deviation"]:       # ratio < 2.0 → NORMAL
         status = "NORMAL"
     elif deviation < config["suspicious_deviation"]: # 2.0 ≤ ratio < 5.0 → SUSPICIOUS
         status = "SUSPICIOUS"
-    else:                                            # ratio ≥ 5.0 → ATTACK
+    else:                                            # ratio ≥ 5.0 and curr > abs_normal_rate → ATTACK
         status = "ATTACK"
 
     return {
@@ -716,6 +740,10 @@ def check_global_flood(src_ip: str) -> tuple:
 
     # Combined unique-source count for the return value (informational).
     unique_srcs = max(unique_ext_srcs, unique_pvt_srcs)
+
+    # ── Profiler Calibration Guard ──
+    if not _profiler_ready():
+        return False, unique_srcs, total_pkts
 
     if now < _dist_cooldown_until:
         return False, unique_srcs, total_pkts

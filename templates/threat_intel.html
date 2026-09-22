@@ -137,16 +137,16 @@ async function lookupIP() {
       <div class="threat-hit">
         <div style="font-size:13px;font-weight:700;color:#f87171;margin-bottom:8px;">⚠ Threat Detected</div>
         <div style="font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <div><span style="color:var(--text-muted);">Threat:</span> ${h.threat || '—'}</div>
-          <div><span style="color:var(--text-muted);">Source:</span> ${h.source || '—'}</div>
-          <div><span style="color:var(--text-muted);">Confidence:</span> ${h.confidence}%</div>
-          ${h.country ? `<div><span style="color:var(--text-muted);">Country:</span> ${h.country}</div>` : ''}
-          ${h.isp     ? `<div><span style="color:var(--text-muted);">ISP:</span> ${h.isp}</div>` : ''}
-          ${h.reports !== undefined ? `<div><span style="color:var(--text-muted);">Reports:</span> ${h.reports}</div>` : ''}
+          <div><span style="color:var(--text-muted);">Threat:</span> ${escHtml(h.threat || '—')}</div>
+          <div><span style="color:var(--text-muted);">Source:</span> ${escHtml(h.source || '—')}</div>
+          <div><span style="color:var(--text-muted);">Confidence:</span> ${escHtml(String(h.confidence))}%</div>
+          ${h.country ? `<div><span style="color:var(--text-muted);">Country:</span> ${escHtml(h.country)}</div>` : ''}
+          ${h.isp     ? `<div><span style="color:var(--text-muted);">ISP:</span> ${escHtml(h.isp)}</div>` : ''}
+          ${h.reports !== undefined ? `<div><span style="color:var(--text-muted);">Reports:</span> ${escHtml(String(h.reports))}</div>` : ''}
         </div>
       </div>`;
   } else {
-    el.innerHTML = `<div class="threat-none">✓ No threats found for ${ip}</div>`;
+    el.innerHTML = `<div class="threat-none">✓ No threats found for ${escHtml(ip)}</div>`;
   }
   loadStats();
 }
@@ -204,7 +204,7 @@ function renderIOCs(list) {
     const confPct = Math.min(100, Math.max(0, i.confidence || 0));
     const barColor = confPct >= 75 ? '#f87171' : confPct >= 50 ? '#fb923c' : '#fcd34d';
     return `<tr>
-      <td><span class="ioc-type-badge">${i.ioc_type}</span></td>
+      <td><span class="ioc-type-badge">${escHtml(i.ioc_type)}</span></td>
       <td style="font-family:monospace;font-size:12px;">${escHtml(i.value)}</td>
       <td style="font-size:12px;">${escHtml(i.threat_type || '—')}</td>
       <td style="font-size:11px;color:var(--text-muted);">${escHtml(i.source || '—')}</td>
@@ -220,7 +220,7 @@ function renderIOCs(list) {
 }
 
 function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 
 loadStats();

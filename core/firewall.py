@@ -1,4 +1,4 @@
-﻿"""
+"""
 firewall.py — SOC Firewall / IP Blocking Module
 
 Safety rules (default — never blocked unless override flag is set):
@@ -75,14 +75,16 @@ _lock               = threading.Lock()
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def _save_state() -> None:
-    """Write current block state + history to disk (called after every change)."""
+    """Write current block state + history to disk atomically (called after every change)."""
     try:
         state = {
             "blocked_meta": {ip: dict(e) for ip, e in _blocked_meta.items()},
             "block_log":    list(_block_log)[:200],   # last 200 entries
         }
-        with open(_STATE_FILE, "w", encoding="utf-8") as f:
+        tmp = _STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2, default=str)
+        os.replace(tmp, _STATE_FILE)
     except Exception:
         pass
 
@@ -243,7 +245,14 @@ def block_ip(ip: str, reason: str = "Manual", auto: bool = False,
       'already_blocked' — already in the block list
       'refused_private' — IP is in a protected range
       'refused_whitelist' — IP is in the user whitelist
+      'invalid_ip'      — IP address format is invalid
     """
+    ip = (ip or "").strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return {"status": "invalid_ip", "ip": ip, "error": "Invalid IP address"}
+
     if is_protected(ip):
         reason_tag = "refused_loopback" if is_loopback(ip) else "refused_private"
         return {"status": reason_tag, "ip": ip}
@@ -283,6 +292,12 @@ def block_ip(ip: str, reason: str = "Manual", auto: bool = False,
 
 
 def unblock_ip(ip: str, reason: str = "Manual unblock") -> dict:
+    ip = (ip or "").strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return {"status": "invalid_ip", "ip": ip, "error": "Invalid IP address"}
+
     with _lock:
         if ip not in _blocked:
             return {"status": "not_blocked", "ip": ip}

@@ -288,7 +288,12 @@
 </style>
 
 <script>
-const escHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escHtml = s => (s == null ? '' : String(s)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#x27;'));
 
 // ── Protection settings ──────────────────────────────────────────────────────
 async function loadProtectionSettings() {
@@ -476,7 +481,7 @@ async function pollDistributedIPs() {
         </td>
         <td><span style="font-size:10px;color:var(--text-muted);">Flood Source</span></td>
         <td>
-          <button onclick="blockDistIP('${escHtml(ip)}')" style="
+          <button class="btn-block-dist-ip" data-ip="${escHtml(ip)}" style="
             padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;
             background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
             transition:all .15s;"
@@ -544,15 +549,15 @@ async function refresh() {
       } else {
         bBody.innerHTML = blocked.map(b => {
           const expiry = b.expires_in != null
-            ? (b.expires_in === 0 ? '<span style="color:#ef4444">expired</span>' : `${b.expires_in}s`)
+            ? (b.expires_in === 0 ? '<span style="color:#ef4444">expired</span>' : `${escHtml(b.expires_in)}s`)
             : '<span style="color:#8a8880">permanent</span>';
           return `<tr class="blocked-row">
-            <td class="mono" style="color:#ff6b6b">${b.ip}</td>
-            <td class="mono" style="font-size:10px">${b.blocked_at}</td>
-            <td style="color:#8a8880;font-size:11px">${b.reason || '--'}</td>
-            <td>${b.auto ? '<span class="pill pill-attack" style="font-size:9px">AUTO</span>' : '<span style="color:#3a3836;font-size:10px">Manual</span>'}</td>
+            <td class="mono" style="color:#ff6b6b">${escHtml(b.ip || '')}</td>
+            <td class="mono" style="font-size:10px">${escHtml(b.blocked_at || '')}</td>
+            <td style="color:#8a8880;font-size:11px">${escHtml(b.reason || '--')}</td>
+            <td>${b.auto ? '<span class="pill pill-attack" style="font-size:9px">AUTO</span>' : '<span style="color:var(--text-muted);font-size:10px">Manual</span>'}</td>
             <td class="mono" style="font-size:10px">${expiry}</td>
-            <td><button class="btn-unblock" onclick="unblockIP('${b.ip}')">Unblock</button></td>
+            <td><button class="btn-unblock btn-unblock-ip" data-ip="${escHtml(b.ip || '')}">Unblock</button></td>
           </tr>`;
         }).join('');
       }
@@ -565,10 +570,10 @@ async function refresh() {
         hBody.innerHTML = history.map(h => {
           const cls = h.action === 'BLOCKED' ? 'pill-attack' : 'pill-resolved';
           return `<tr>
-            <td class="mono">${h.ip}</td>
-            <td><span class="pill ${cls}" style="font-size:9px">${h.action}</span></td>
-            <td class="mono" style="font-size:10px">${h.blocked_at}</td>
-            <td style="color:#8a8880;font-size:11px">${h.reason || '--'}</td>
+            <td class="mono">${escHtml(h.ip || '')}</td>
+            <td><span class="pill ${cls}" style="font-size:9px">${escHtml(h.action || '')}</span></td>
+            <td class="mono" style="font-size:10px">${escHtml(h.blocked_at || '')}</td>
+            <td style="color:#8a8880;font-size:11px">${escHtml(h.reason || '--')}</td>
           </tr>`;
         }).join('');
       }
@@ -585,12 +590,12 @@ async function refresh() {
         sBody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="color:#22c55e">No suspicious activity detected.</div></td></tr>';
       } else {
         sBody.innerHTML = ips.map(s => `<tr class="${s.severity === 'HIGH' || s.severity === 'ATTACK' ? 'arp-high' : 'arp-med'}">
-          <td class="mono" style="color:#fbbf24">${s.ip}</td>
+          <td class="mono" style="color:#fbbf24">${escHtml(s.ip || '')}</td>
           <td>${sevPill(s.severity)}</td>
-          <td style="font-size:11px;color:#8a8880">${s.attack_type || s.source || '--'}</td>
-          <td class="mono">${s.packets || 0}</td>
-          <td style="font-size:11px">${s.country || '--'}</td>
-          <td><button class="btn-block-small" onclick="blockSuspiciousIP('${s.ip}', '${(s.attack_type||s.source||'Suspicious').replace(/'/g,'')}')">Block</button></td>
+          <td style="font-size:11px;color:#8a8880">${escHtml(s.attack_type || s.source || '--')}</td>
+          <td class="mono">${escHtml(s.packets || 0)}</td>
+          <td style="font-size:11px">${escHtml(s.country || '--')}</td>
+          <td><button class="btn-block-small btn-block-susp-ip" data-ip="${escHtml(s.ip || '')}" data-reason="${escHtml(s.attack_type || s.source || 'Suspicious')}">Block</button></td>
         </tr>`).join('');
       }
     }
@@ -608,12 +613,12 @@ async function refresh() {
         // Show most recent first
         aBody.innerHTML = [...events].reverse().slice(0, 50).map(e => `
           <tr class="${e.severity === 'HIGH' ? 'arp-high' : 'arp-med'}">
-            <td class="mono" style="color:#fbbf24">${e.src_ip || '--'}</td>
-            <td class="mono" style="font-size:10px;color:#8a8880">${e.src_mac || '--'}</td>
-            <td style="font-size:11px;color:#f97316">${e.attack_type || '--'}</td>
+            <td class="mono" style="color:#fbbf24">${escHtml(e.src_ip || '--')}</td>
+            <td class="mono" style="font-size:10px;color:#8a8880">${escHtml(e.src_mac || '--')}</td>
+            <td style="font-size:11px;color:#f97316">${escHtml(e.attack_type || '--')}</td>
             <td>${arpSevPill(e.severity)}</td>
-            <td class="mono" style="font-size:10px">${e.time || '--'}</td>
-            <td>${e.src_ip ? `<button class="btn-block-small" onclick="blockFromArp('${e.src_ip}')">Block</button>` : '--'}</td>
+            <td class="mono" style="font-size:10px">${escHtml(e.time || '--')}</td>
+            <td>${e.src_ip ? `<button class="btn-block-small btn-block-arp-ip" data-ip="${escHtml(e.src_ip)}">Block</button>` : '--'}</td>
           </tr>`).join('');
       }
     }
@@ -637,6 +642,40 @@ async function blockSuspiciousIP(ip, reason) {
     refresh();
   } catch(e) { showToast('Failed: ' + e.message, 'error'); }
 }
+
+// Event delegation for table action buttons
+document.getElementById('blocked-body')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-unblock-ip');
+  if (btn) {
+    const ip = btn.getAttribute('data-ip');
+    if (ip) unblockIP(ip);
+  }
+});
+
+document.getElementById('susp-body')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-block-susp-ip');
+  if (btn) {
+    const ip = btn.getAttribute('data-ip');
+    const reason = btn.getAttribute('data-reason') || 'Suspicious';
+    if (ip) blockSuspiciousIP(ip, reason);
+  }
+});
+
+document.getElementById('arp-body')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-block-arp-ip');
+  if (btn) {
+    const ip = btn.getAttribute('data-ip');
+    if (ip) blockFromArp(ip);
+  }
+});
+
+document.getElementById('dist-flood-tbody')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-block-dist-ip');
+  if (btn) {
+    const ip = btn.getAttribute('data-ip');
+    if (ip) blockDistIP(ip);
+  }
+});
 
 // Boot
 refresh();

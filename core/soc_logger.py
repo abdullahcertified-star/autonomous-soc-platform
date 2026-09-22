@@ -13,6 +13,7 @@ Usage:
     log.critical("firewall", "Block applied", {"ip": "5.6.7.8"})
 """
 import logging
+from logging.handlers import RotatingFileHandler
 import json
 import threading
 import time
@@ -34,7 +35,7 @@ _seq  = 0
 
 # ── File logger ───────────────────────────────────────────────────────────────
 
-_fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+_fh = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 _lg = logging.getLogger("soc_platform")
 _lg.setLevel(logging.DEBUG)

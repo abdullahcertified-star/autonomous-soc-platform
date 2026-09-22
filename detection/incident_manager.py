@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.request
 import json as _json
+import ipaddress
 from collections import deque
 
 from utils import ts
@@ -68,6 +69,12 @@ def correlation_key(src: str, proto: str, attack_kind: str) -> str:
 
 
 def touch_attack_latch(now: float | None = None) -> None:
+    try:
+        from detection import network_profiler
+        if not network_profiler.is_ready():
+            return
+    except Exception:
+        pass
     global _last_attack_epoch
     t = now if now is not None else time.time()
     with _latch_lock:
@@ -228,6 +235,16 @@ def resolve_stale_incidents() -> None:
                     inc["end_time"] = now_ts
 
 
+def _is_private_or_local(ip: str) -> bool:
+    if not ip or not isinstance(ip, str):
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+        return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_reserved
+    except ValueError:
+        return False
+
+
 def _geoip_worker() -> None:
     while True:
         ip = None
@@ -244,6 +261,15 @@ def _geoip_worker() -> None:
                 if ip in top_attackers:
                     top_attackers[ip]["country"] = cached
             continue
+
+        if _is_private_or_local(ip):
+            with _geoip_lock:
+                _geoip_cache[ip] = "LAN"
+            with _attacker_lock:
+                if ip in top_attackers:
+                    top_attackers[ip]["country"] = "LAN"
+            continue
+
         try:
             url = f"http://ip-api.com/json/{ip}?fields=countryCode"
             req = urllib.request.Request(url, headers={"User-Agent": "SOC/2.0"})
@@ -267,6 +293,12 @@ _services_lock = threading.Lock()
 
 def lookup_country(ip: str) -> str:
     """Non-blocking: return cached GeoIP country code, or queue lookup and return ''."""
+    if not ip or not isinstance(ip, str):
+        return ""
+    if _is_private_or_local(ip):
+        with _geoip_lock:
+            _geoip_cache[ip] = "LAN"
+        return "LAN"
     with _geoip_lock:
         if ip in _geoip_cache:
             return _geoip_cache[ip]

@@ -1,4 +1,4 @@
-﻿"""
+"""
 health_bp.py — Health Check & Metrics Endpoints
 
 Routes:
@@ -95,8 +95,12 @@ def quick_status():
 
     try:
         from detection import sniffer
-        under_attack = bool(getattr(sniffer, 'network_stats', {}).get('under_attack'))
-        incidents    = len(sniffer.incidents)
+        active_incidents = [
+            inc for inc in list(sniffer.incidents.values()) + list(getattr(sniffer, "target_incidents", {}).values())
+            if inc.get("status") in ("OPEN", "ACTIVE")
+        ]
+        under_attack = len(active_incidents) > 0 or bool(getattr(sniffer, 'network_stats', {}).get('under_attack'))
+        incidents    = len(active_incidents)
     except Exception:
         under_attack = False
         incidents    = 0
