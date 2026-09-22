@@ -63,18 +63,18 @@ def _seed_rbac() -> None:
         ('analyst', 'SOC operations: cases, blocks, firewall, alerts',     1),
         ('admin',   'Full access: settings, users, roles, audit trail',    2),
     ]
+    existing_roles = {r.name: r for r in Role.query.all()}
     role_map: dict = {}
     for name, desc, level in role_defs:
-        r = Role.query.filter_by(name=name).first()
+        r = existing_roles.get(name)
         if not r:
             # pyrefly: ignore
             r = Role(name=name, description=desc, level=level, is_system=True)
             db.session.add(r)
-            db.session.flush()
         role_map[name] = r
+    db.session.flush()
 
     # ── 2. Permissions + role_permissions ─────────────────────────────────────
-    # Build cumulative permission sets (each role inherits all lower-level ones)
     from models import Permission as _Perm
     viewer_perms  = set(ROLE_PERMISSIONS['viewer'])
     analyst_perms = viewer_perms  | set(ROLE_PERMISSIONS['analyst'])
@@ -86,37 +86,34 @@ def _seed_rbac() -> None:
         'admin':   admin_perms,
     }
 
-    # ── Pass 1: ensure Permission objects exist in the table ─────────────────
-    perm_cache: dict = {}
-    all_perm_sets = list(tier_perms.values())
-    for perm_set in all_perm_sets:
+    # Pre-fetch all permissions in 1 query instead of looping N times over network
+    existing_perms = {(p.resource, p.action): p for p in _Perm.query.all()}
+    new_perms_added = False
+
+    for perm_set in tier_perms.values():
         for resource, action, description in perm_set:
             key = (resource, action)
-            if key not in perm_cache:
-                p = _Perm.query.filter_by(resource=resource, action=action).first()
-                if not p:
-                    # pyrefly: ignore
-                    p = _Perm(
-                        name        = f'{resource}:{action}',
-                        resource    = resource,
-                        action      = action,
-                        description = description,
-                    )
-                    db.session.add(p)
-                    db.session.flush()
-                perm_cache[key] = p
-    db.session.flush()
+            if key not in existing_perms:
+                # pyrefly: ignore
+                p = _Perm(
+                    name        = f'{resource}:{action}',
+                    resource    = resource,
+                    action      = action,
+                    description = description,
+                )
+                db.session.add(p)
+                existing_perms[key] = p
+                new_perms_added = True
 
-    # ── Pass 2: assign permissions to roles — additive only ──────────────────
-    # Only adds permissions not yet assigned to a role; never removes existing
-    # ones. This means new permissions added to ROLE_PERMISSIONS are picked up
-    # on restart without wiping admin customisations for permissions that are
-    # already present in the role.
+    if new_perms_added:
+        db.session.flush()
+
+    # Pass 2: assign permissions to roles — additive only
     for role_name, perm_set in tier_perms.items():
         role = role_map[role_name]
         existing_ids = {p.id for p in role.permissions}
         for resource, action, _ in perm_set:
-            perm = perm_cache.get((resource, action))
+            perm = existing_perms.get((resource, action))
             if perm and perm.id not in existing_ids:
                 role.permissions.append(perm)
                 existing_ids.add(perm.id)
@@ -125,9 +122,9 @@ def _seed_rbac() -> None:
 
     # ── 3. Migrate existing users to user_roles ───────────────────────────────
     from models import User as _User
+    existing_user_roles = {ur.user_id for ur in UserRole.query.all()}
     for user in _User.query.all():
-        already = UserRole.query.filter_by(user_id=user.id).first()
-        if already:
+        if user.id in existing_user_roles:
             continue
         role_name = user.role if user.role in role_map else 'analyst'
         # pyrefly: ignore
